@@ -1,140 +1,118 @@
-import re
+import asyncio
 import logging
-from telethon import TelegramClient, events, Button
+import re
+from typing import Dict, Optional, List
+from datetime import datetime
+
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from telethon.tl.functions.auth import SendCodeRequest
+from telethon.tl.types import CodeSettings
+from telethon.errors import (
+    PhoneNumberInvalidError,
+    SessionPasswordNeededError,
+    PhoneCodeInvalidError,
+    PhoneCodeExpiredError,
+    FloodWaitError,
+    UserDeactivatedError,
+    AuthKeyUnregisteredError,
+)
 
-logging.basicConfig(level=logging.INFO)
-
+log = logging.getLogger("NextLevelVault")
 
 class AccountManager:
-    """
-    Manages permanently-connected Telethon clients for each phone number.
-    When Telegram sends an OTP (from user 777000), it's instantly forwarded to the buyer.
-    """
-
-    def __init__(self, accounts_col, bot_client, api_id, api_hash, pending_otp_requests):
+    def __init__(self, accounts_col, bot, api_id, api_hash, pending_otp_requests):
         self.accounts_col = accounts_col
-        self.bot = bot_client
+        self.bot = bot
         self.api_id = api_id
         self.api_hash = api_hash
-        self.clients = {}                  # phone → TelegramClient
-        self.pending_requests = pending_otp_requests  # (buyer_id, phone) → True
-
-    # ------------------------------------------------------------------ #
-    #  Add / remove / reload                                               #
-    # ------------------------------------------------------------------ #
-    async def add_client(self, phone: str, session_str: str):
-        if phone in self.clients:
-            await self.remove_client(phone)
-
-        client = TelegramClient(StringSession(session_str), self.api_id, self.api_hash)
-        # Use connect() instead of start() so we never trigger the interactive
-        # login flow.  start() internally calls is_user_authorized() and, if it
-        # returns False, tries to sign in — which breaks for sessions created with
-        # a different API_ID even though the auth_key is valid.
-        await client.connect()
-        self.clients[phone] = client
-
-        # ---- OTP listener ----
-        @client.on(events.NewMessage(from_users=777000))
-        async def otp_handler(event):
-            text = event.message.message
-
-            # Try different OTP patterns
-            code_match = re.search(r'\b(\d{5,6})\b', text)
-            if not code_match:
-                code_match = re.search(r'Login code[:\s]+(\d+)', text, re.I)
-            if not code_match:
-                return  # not an OTP message
-
-            otp = code_match.group(1)
-
-            # Always look for the most recent buyer of this number
-            buyer_doc = await self.accounts_col.find_one(
-                {"phone": phone, "status": "sold"},
-                sort=[("sold_at", -1)]
-            )
-            if not buyer_doc:
-                return
-
-            buyer_id = buyer_doc.get("buyer_id")
-            if not buyer_id:
-                return
-
-            # Build message
-            msg = f"📞 **Phone:** `{phone}`\n📩 **OTP:** `{otp}`"
-            twofa = buyer_doc.get("twofa_password")
-            if twofa:
-                msg += f"\n🔐 **2FA Password:** `{twofa}`"
-            msg += (
-                "\n\n⚠️ **Note:** Re-Request button works for 72 hours."
-                " After that, request a new number."
-            )
-
-            buttons = [[
-                Button.inline("🔄 Request New OTP", f"resend_{phone}".encode()),
-                Button.inline("🔓 Logout from Bot", f"logout_{phone}".encode()),
-            ]]
-
-            try:
-                await self.bot.send_message(buyer_id, msg, buttons=buttons)
-            except Exception as e:
-                logging.error(f"[AccountManager] Failed to send OTP to {buyer_id}: {e}")
-
-            # Clear pending request if any
-            key = (buyer_id, phone)
-            if key in self.pending_requests:
-                del self.pending_requests[key]
-                logging.info(f"[AccountManager] Cleared pending OTP for {buyer_id}/{phone}")
-
-        logging.info(f"[AccountManager] ✅ Client started for {phone}")
-
-    async def remove_client(self, phone: str):
-        if phone in self.clients:
-            try:
-                await self.clients[phone].disconnect()
-            except Exception:
-                pass
-            del self.clients[phone]
-
-    async def logout_client(self, phone: str):
-        """Called when buyer clicks 'Logout from Bot' — disconnects and removes."""
-        await self.remove_client(phone)
-        logging.info(f"[AccountManager] Client for {phone} logged out by buyer.")
-
-    async def stop_all(self):
-        for c in self.clients.values():
-            try:
-                await c.disconnect()
-            except Exception:
-                pass
-        self.clients.clear()
+        self.pending_otp_requests = pending_otp_requests
+        self.clients: Dict[str, TelegramClient] = {}
 
     async def load_all(self):
-        """Load all available accounts on startup."""
-        async for acc in self.accounts_col.find({"status": "available"}):
-            try:
-                await self.add_client(acc["phone"], acc["session_string"])
-            except Exception as e:
-                logging.error(f"[AccountManager] Failed to load {acc.get('phone')}: {e}")
+        """Load all available and sold sessions with parallel connection."""
+        docs = []
+        async for doc in self.accounts_col.find({"status": {"$in": ["available", "sold"]}}):
+            if doc.get("phone") and doc.get("session_string"):
+                docs.append(doc)
+        sem = asyncio.Semaphore(5)  # Max 5 parallel connections
+        async def connect_one(doc):
+            async with sem:
+                await self.add_client(doc["phone"], doc["session_string"], silent=True)
+        await asyncio.gather(*[connect_one(d) for d in docs])
+        log.info(f"[AccountManager] Loaded {len(self.clients)} clients.")
 
-    # ------------------------------------------------------------------ #
-    #  Trigger OTP manually (re-request)                                   #
-    # ------------------------------------------------------------------ #
-    async def request_otp(self, phone: str) -> bool:
-        """
-        Ask Telegram to resend the login code by calling SendCodeRequest.
-        Returns True if triggered, False otherwise.
-        """
-        if phone not in self.clients:
-            return False
+    async def add_client(self, phone: str, session_string: str, silent: bool = False):
+        if phone in self.clients:
+            return
         try:
-            from telethon.tl.functions.auth import SendCodeRequest
-            from telethon.tl.types import CodeSettings
-            client = self.clients[phone]
-            await client(SendCodeRequest(phone_number=phone, api_id=self.api_id,
-                                          api_hash=self.api_hash, settings=CodeSettings()))
-            return True
+            client = TelegramClient(StringSession(session_string), self.api_id, self.api_hash)
+            await client.connect()
+            self.clients[phone] = client
+            log.info(f"[{phone}] ✅ Client loaded.")
+            asyncio.create_task(self._listen_otp(phone, client))
         except Exception as e:
-            logging.error(f"[AccountManager] request_otp failed for {phone}: {e}")
+            log.error(f"[{phone}] Failed to add client: {e}")
+
+    async def get_client(self, phone: str) -> Optional[TelegramClient]:
+        return self.clients.get(phone)
+
+    async def request_otp(self, phone: str, call: bool = False) -> bool:
+        """Request OTP via SMS (call=False)"""
+        client = self.clients.get(phone)
+        if not client:
+            doc = await self.accounts_col.find_one({"phone": phone})
+            if doc and doc.get("session_string"):
+                await self.add_client(phone, doc["session_string"])
+                client = self.clients.get(phone)
+            if not client:
+                log.error(f"[{phone}] Client not available.")
+                return False
+        try:
+            await client.request_code(phone, force_sms=True)
+            log.info(f"[{phone}] ✅ OTP requested.")
+            return True
+        except FloodWaitError as e:
+            log.warning(f"[{phone}] Flood wait: {e.seconds}s")
+            await asyncio.sleep(e.seconds)
+            return await self.request_otp(phone, call)
+        except Exception as e:
+            log.error(f"[{phone}] Failed to request OTP: {e}")
             return False
+
+    async def logout_client(self, phone: str):
+        client = self.clients.pop(phone, None)
+        if client:
+            try:
+                await client.log_out()
+                await client.disconnect()
+            except Exception as e:
+                log.warning(f"[{phone}] Logout error: {e}")
+
+    async def _listen_otp(self, phone: str, client: TelegramClient):
+        try:
+            @client.on(events.NewMessage(incoming=True))
+            async def handler(event):
+                if event.is_private and event.message and event.message.text:
+                    text = event.message.text
+                    codes = re.findall(r'\b(\d{4,7})\b', text)
+                    if codes:
+                        otp_code = codes[0]
+                        if (self.pending_otp_requests.get((None, phone)) or 
+                            any(p == phone for (_, p) in self.pending_otp_requests.items())):
+                            order = await self.accounts_col.find_one({"phone": phone, "status": "sold"}, sort=[("sold_at", -1)])
+                            if order:
+                                buyer_id = order.get("buyer_id")
+                                if buyer_id:
+                                    twofa = order.get("twofa_password", "N/A")
+                                    await self.bot.send_message(
+                                        buyer_id,
+                                        f"📩 **OTP Received!**\n\n`{otp_code}`\n\n_This code is valid for a short time._\n2FA Password: `{twofa}`"
+                                    )
+                                    log.info(f"[{phone}] OTP forwarded to {buyer_id}")
+                                    keys_to_remove = [k for k, v in self.pending_otp_requests.items() if v == phone]
+                                    for k in keys_to_remove:
+                                        self.pending_otp_requests.pop(k, None)
+        except Exception as e:
+            log.error(f"[{phone}] Listener error: {e}")
+        await client.run_until_disconnected()
