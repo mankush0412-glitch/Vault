@@ -551,8 +551,9 @@ async def cmd_start(event):
         return
 
     first_name = (await event.get_sender()).first_name or "User"
+    # FIX: Added space after {first_name}
     raw_welcome = (
-        f"❄️ Welcome {first_name}to the Next Level VAULT 🔥\n\n"
+        f"❄️ Welcome {first_name} to the Next Level VAULT 🔥\n\n"
         "✅ Buy Telegram Accounts — get login OTP & 2FA password instantly 🤍\n"
         "✅ Deposit via UPI  — quick and easy. 🤍\n"
         "✅ Multiple Countries — choose your country and price 🤍\n\n"
@@ -792,7 +793,8 @@ async def callback_router(event):
     elif data.startswith("resend_"):
         phone = data[7:]
         await event.answer("⏳ Requesting OTP…", alert=False)
-        success = await acc_mgr.request_otp(phone, call=False)
+        # FIX: Removed "call=False"
+        success = await acc_mgr.request_otp(phone)
         if success:
             await event.respond(f"📤 OTP request sent for `{phone}`.")
         else:
