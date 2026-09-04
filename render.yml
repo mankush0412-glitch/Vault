@@ -1,11 +1,35 @@
 services:
   - type: web
     name: next-level-vault
-    env: python
+    runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
+    plan: free
+
     envVars:
+      - key: API_ID
+        sync: false
+
+      - key: API_HASH
+        sync: false
+
+      - key: BOT_TOKEN
+        sync: false
+
+      - key: OWNER_ID
+        sync: false
+
+      - key: MONGO_URL
+        sync: false
+
+      - key: DB_NAME
+        value: stark_bot
+
+      - key: ADMIN_IDS
+        value: ""
+
+      - key: FORCE_JOIN_CHAT_IDS
+        value: ""
+
       - key: PORT
         value: 8080
-      - key: RENDER_EXTERNAL_URL
-        value: https://next-level-vault.onrender.com
