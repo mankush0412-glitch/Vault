@@ -1,0 +1,34 @@
+services:
+  - type: web          # "web" type = Render assigns a public URL + keeps service alive
+    name: stark-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    plan: free         # change to "starter" for always-on (no sleep)
+
+    envVars:
+      # ── REQUIRED ──────────────────────────────────────────────
+      - key: API_ID
+        sync: false          # you fill this on Render dashboard
+
+      - key: API_HASH
+        sync: false
+
+      - key: BOT_TOKEN
+        sync: false
+
+      - key: OWNER_ID
+        sync: false
+
+      - key: MONGO_URL
+        sync: false          # MongoDB Atlas connection string
+
+      # ── OPTIONAL (safe defaults pre-filled) ───────────────────
+      - key: DB_NAME
+        value: stark_bot
+
+      - key: ADMIN_IDS
+        value: ""            # extra admin IDs, comma-separated
+
+      - key: FORCE_JOIN_CHAT_IDS
+        value: ""            # e.g. @mychannel or leave blank
