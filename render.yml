@@ -1,9 +1,7 @@
 services:
   - type: web
     name: next-level-vault
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    runtime: docker          # <--- Yahan python ki jagah docker likha hai
     plan: free
 
     envVars:
