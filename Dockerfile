@@ -4,8 +4,13 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (Needed for Pillow and cryptg)
-RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+# Install system dependencies (gcc, g++, python3-dev for cryptg/Pillow compilation safety)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    python3-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for caching)
 COPY requirements.txt .
