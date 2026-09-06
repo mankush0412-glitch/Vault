@@ -1,7 +1,7 @@
 services:
   - type: web
     name: next-level-vault
-    runtime: docker          # <--- Yahan python ki jagah docker likha hai
+    runtime: docker
     plan: free
 
     envVars:
@@ -31,3 +31,6 @@ services:
 
       - key: PORT
         value: 8080
+
+      - key: RENDER_EXTERNAL_URL
+        sync: false
