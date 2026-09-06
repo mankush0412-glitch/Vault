@@ -9,6 +9,7 @@ import hashlib
 import logging
 import random
 import string
+import tempfile
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -20,7 +21,7 @@ from telethon.sessions import StringSession
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
-    filters, ContextTypes, ConversationHandler
+    filters, ContextTypes
 )
 
 import account_manager
@@ -35,6 +36,12 @@ MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 DB_NAME = os.getenv("DB_NAME", "stark_bot")
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "")
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+
+# Force-join chat IDs
+_fj_raw = os.getenv("FORCE_JOIN_CHAT_IDS", os.getenv("FORCE_JOIN_CHAT_ID", "")).strip()
+RAW_CHAT_IDS: List[str] = [x.strip() for x in _fj_raw.split(",") if x.strip()]
 
 if not all([API_ID, API_HASH, BOT_TOKEN, OWNER_ID]):
     raise ValueError("❌ .env incomplete!")
@@ -61,6 +68,7 @@ acc_mgr: Optional[account_manager.AccountManager] = None
 user_states: Dict[int, dict] = {}
 pending_otp: Dict = {}
 ADMIN_IDS = [OWNER_ID]
+application: Optional[Application] = None
 
 # ─── FANCY TEXT ──────────────────────────────
 _SMALL = {
@@ -195,6 +203,67 @@ async def is_admin(user_id: int) -> bool:
     doc = await bot_admins_col.find_one({"telegram_id":user_id,"is_active":True})
     return doc is not None
 
+# ─── FORCE-JOIN ──────────────────────────────
+def _parse_chat_id(raw: str):
+    raw = raw.strip()
+    if raw.startswith("@"):
+        return raw
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+async def _is_member_of(chat_raw: str, user_id: int) -> bool:
+    parsed = _parse_chat_id(chat_raw)
+    if parsed is None:
+        return False
+    try:
+        entity = await application.bot.get_chat(parsed)
+        member = await application.bot.get_chat_member(entity.id, user_id)
+        return member.status in ("member", "administrator", "creator")
+    except Exception:
+        return False
+
+async def is_user_member(user_id: int) -> bool:
+    if not RAW_CHAT_IDS:
+        return True
+    for raw in RAW_CHAT_IDS:
+        if not await _is_member_of(raw, user_id):
+            return False
+    return True
+
+async def send_join_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    buttons = []
+    for raw in RAW_CHAT_IDS:
+        if await _is_member_of(raw, user_id):
+            continue
+        title = raw
+        try:
+            parsed = _parse_chat_id(raw)
+            if parsed:
+                chat = await context.bot.get_chat(parsed)
+                title = chat.title or raw
+        except:
+            pass
+        if raw.startswith("@"):
+            buttons.append([InlineKeyboardButton(f"📢 Join {title}", url=f"https://t.me/{raw[1:]}")])
+        else:
+            try:
+                parsed = _parse_chat_id(raw)
+                if parsed:
+                    invite_link = await context.bot.create_chat_invite_link(parsed, member_limit=1)
+                    buttons.append([InlineKeyboardButton(f"📢 Join {title}", url=invite_link.invite_link)])
+            except:
+                pass
+    if not buttons:
+        return
+    buttons.append([InlineKeyboardButton("✅ Check Again", callback_data="check_join")])
+    await update.message.reply_text(
+        fancy("⚠️ **ʏᴏᴜ ᴍᴜsᴛ ᴊᴏɪɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ(s) ʙᴇʟᴏᴡ ᴛᴏ ᴜsᴇ ᴛʜɪs ʙᴏᴛ.**"),
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
 # ─── USER HELPER ──────────────────────────────
 async def get_or_create_user(user_id: int, referrer_id: Optional[int] = None) -> dict:
     user = await users_col.find_one({"user_id":user_id})
@@ -215,7 +284,7 @@ async def get_or_create_user(user_id: int, referrer_id: Optional[int] = None) ->
                     {"$inc":{"balance":bonus,"referral_earnings":bonus,"withdrawable":bonus}}
                 )
                 try:
-                    await application.bot.send_message(
+                    await context.bot.send_message(
                         referrer_id,
                         fancy(f"🎁 **ʀᴇꜰᴇʀʀᴀʟ ʙᴏɴᴜs!**\n+₹{bonus:.0f} ᴄʀᴇᴅɪᴛᴇᴅ.")
                     )
@@ -244,9 +313,6 @@ async def get_categories() -> List[dict]:
     return cats
 
 # ─── SESSION HELPERS ──────────────────────────
-# (same as original – phone_from_filename, detect_format, convert to string)
-# I'll keep them concise but functional.
-
 def _phone_from_filename(name: str) -> str:
     base = os.path.splitext(os.path.basename(name))[0]
     digits = re.sub(r"[^\d]","",base)
@@ -321,16 +387,19 @@ def _make_upi_qr(upi_id: str, amount: float, name: str) -> Optional[bytes]:
         return None
 
 # ─── KEYBOARD BUILDERS ──────────────────────
-# These return InlineKeyboardMarkup
 def get_main_menu(user_id: int) -> InlineKeyboardMarkup:
     kb = [
         [InlineKeyboardButton(fancy("✈️ ʙᴜʏ ᴛᴇʟᴇɢʀᴀᴍ ᴀᴄᴄᴏᴜɴᴛ"), callback_data="store")],
-        [InlineKeyboardButton(fancy("💳 ᴀᴅᴅ ᴄʀᴇᴅɪᴛs"), callback_data="deposit")],
-        [InlineKeyboardButton(fancy("👤 ᴍʏ ᴘʀᴏꜰɪʟᴇ"), callback_data="profile"),
-         InlineKeyboardButton(fancy("🌐 ʟᴀɴɢᴜᴀɢᴇ"), callback_data="language")],
-        [InlineKeyboardButton(fancy("❓ ʜᴇʟᴘ"), callback_data="help")],
     ]
-    # admin panel if admin
+    # WhatsApp if enabled
+    if asyncio.run_coroutine_threadsafe(get_setting("whatsapp_enabled", False), loop).result():
+        kb.append([InlineKeyboardButton(fancy("💬 ʙᴜʏ ᴡʜᴀᴛsᴀᴘᴘ"), callback_data="whatsapp")])
+    kb.append([InlineKeyboardButton(fancy("💳 ᴀᴅᴅ ᴄʀᴇᴅɪᴛs"), callback_data="deposit")])
+    kb.append([
+        InlineKeyboardButton(fancy("👤 ᴍʏ ᴘʀᴏꜰɪʟᴇ"), callback_data="profile"),
+        InlineKeyboardButton(fancy("🌐 ʟᴀɴɢᴜᴀɢᴇ"), callback_data="language")
+    ])
+    kb.append([InlineKeyboardButton(fancy("❓ ʜᴇʟᴘ"), callback_data="help")])
     if asyncio.run_coroutine_threadsafe(is_admin(user_id), loop).result():
         kb.append([InlineKeyboardButton(fancy("⚙️ ᴀᴅᴍɪɴ ᴘᴀɴᴇʟ"), callback_data="admin")])
     return InlineKeyboardMarkup(kb)
@@ -360,7 +429,7 @@ def get_inventory_buttons(countries: List[dict], page: int = 0, per_page: int = 
             price = c["price"]
             label = f"{c['flag']} {fancy(c['name'])} | {stock} | {price} ᴄʀ"
             if stock == 0:
-                label += " ❌"  # indicate out of stock
+                label += " ❌"
                 callback = "noop"
             else:
                 callback = f"buy:{c['code']}"
@@ -394,7 +463,9 @@ def get_admin_menu(is_owner: bool) -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(fancy("🏠 ʜᴏᴍᴇ"), callback_data="main_menu")])
     return InlineKeyboardMarkup(rows)
 
-# ─── START COMMAND ──────────────────────────
+# ─── BOT HANDLERS ──────────────────────────────
+
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     args = context.args
@@ -413,6 +484,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 You are banned from this bot.")
         return
 
+    # Force-join check
+    if not await is_user_member(user_id):
+        await send_join_message(update, context)
+        return
+
     first_name = update.effective_user.first_name or "User"
     raw_welcome = (
         f"❄️ ᴡᴇʟᴄᴏᴍᴇ {first_name} ᴛᴏ ᴛʜᴇ Nᴇxᴛ Lᴇᴠᴇʟ Vᴀᴜʟᴛ 🔥\n\n"
@@ -422,32 +498,61 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🟢 ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ sᴛᴀʀᴛᴇᴅ 👇"
     )
     welcome_msg = fancy(raw_welcome)
-    await update.message.reply_text(
-        welcome_msg,
-        reply_markup=get_main_menu(user_id)
-    )
 
-# ─── CALLBACK QUERY HANDLER ──────────────────
+    photo_id = await get_setting("welcome_photo")
+    if photo_id:
+        try:
+            await update.message.reply_photo(
+                photo=photo_id,
+                caption=welcome_msg,
+                reply_markup=get_main_menu(user_id)
+            )
+            return
+        except:
+            pass
+    await update.message.reply_text(welcome_msg, reply_markup=get_main_menu(user_id))
+
+# Callback query handler (main router)
 async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
     data = query.data
 
-    # Check ban and force-join (simplified – you can add)
     user = await users_col.find_one({"user_id": user_id})
     if user and user.get("is_banned"):
         await query.edit_message_text("🚫 You are banned.")
         return
 
-    # ── MAIN MENU ───────────────────────────
-    if data == "main_menu":
+    # Force-join check for all callbacks except check_join
+    if data != "check_join" and not await is_user_member(user_id):
         await query.edit_message_text(
-            fancy("🏠 " + await get_setting("bot_name","Next Level Vault") + "\n\nᴄʜᴏᴏsᴇ ᴀɴ ᴏᴘᴛɪᴏɴ:"),
+            fancy("⚠️ **ʏᴏᴜ ᴍᴜsᴛ ᴊᴏɪɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ(s) ᴛᴏ ᴜsᴇ ᴛʜɪs ʙᴏᴛ.**"),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Check Again", callback_data="check_join")]
+            ])
+        )
+        return
+
+    # ── CHECK JOIN ────────────────────────────
+    if data == "check_join":
+        if await is_user_member(user_id):
+            await query.edit_message_text("✅ Verified! Restart bot with /start")
+            await start(update, context)
+        else:
+            await query.answer("❌ You haven't joined yet!", show_alert=True)
+        return
+
+    # ── MAIN MENU ─────────────────────────────
+    if data == "main_menu":
+        user_states.pop(user_id, None)
+        bot_name = await get_setting("bot_name", "Next Level Vault")
+        await query.edit_message_text(
+            fancy(f"🏠 {bot_name}\n\nᴄʜᴏᴏsᴇ ᴀɴ ᴏᴘᴛɪᴏɴ:"),
             reply_markup=get_main_menu(user_id)
         )
 
-    # ── STORE ──────────────────────────────
+    # ── STORE ──────────────────────────────────
     elif data == "store":
         cats = await get_categories()
         await query.edit_message_text(
@@ -481,6 +586,10 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_inventory_buttons(countries, page)
         )
 
+    elif data == "noop":
+        await query.answer()
+
+    # ── BUY ──────────────────────────────────────
     elif data.startswith("buy:"):
         code = data.split(":")[1]
         country = await countries_col.find_one({"code":code,"is_active":True})
@@ -489,7 +598,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         cat_name = user_states.get(user_id, {}).get("category")
         stock = await accounts_col.count_documents({
-            "country_code":code, "status":"available", "category":cat_name
+            "country_code":code,"status":"available","category":cat_name
         })
         if stock == 0:
             await query.answer("❌ Out of stock!", show_alert=True)
@@ -547,7 +656,6 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Out of stock — someone just bought the last one!", show_alert=True)
             return
         await users_col.update_one({"user_id":user_id}, {"$inc":{"balance":-price}})
-        # referral bonus
         if user.get("referred_by"):
             pct = float(await get_setting("referral_percent",3.0))
             bonus = round(price * pct / 100, 2)
@@ -609,36 +717,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-    # ── PROFILE ──────────────────────────────
-    elif data == "profile":
-        user = await get_or_create_user(user_id)
-        bal = float(user.get("balance",0))
-        wd = float(user.get("withdrawable",0))
-        orders_count = await orders_col.count_documents({"user_id":user_id})
-        deps_count = await deposits_col.count_documents({"user_id":user_id})
-        tier = user.get("tier","⭐")
-        lang = user.get("language","en")
-        await query.edit_message_text(
-            fancy(
-                f"👤 **ᴘʀᴏꜰɪʟᴇ**\n\n"
-                f"🆔 ɪᴅ: `{user_id}`\n"
-                f"🏅 ᴛɪᴇʀ: {tier}\n"
-                f"💰 ᴀᴠᴀɪʟᴀʙʟᴇ ᴄʀᴇᴅɪᴛs: `{bal:.2f}`\n"
-                f"💳 ᴡɪᴛʜᴅʀᴀᴡᴀʙʟᴇ: `{wd:.2f}`\n"
-                f"📦 ᴏʀᴅᴇʀs: `{orders_count}`\n"
-                f"💳 ᴅᴇᴘᴏsɪᴛs: `{deps_count}`\n"
-                f"🌐 ʟᴀɴɢᴜᴀɢᴇ: `{lang}`"
-            ),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(fancy("📋 ᴏʀᴅᴇʀs"), callback_data="orders"),
-                 InlineKeyboardButton(fancy("📜 ʜɪsᴛᴏʀʏ"), callback_data="history")],
-                [InlineKeyboardButton(fancy("🎁 ʀᴇꜰᴇʀʀᴀʟ"), callback_data="referral"),
-                 InlineKeyboardButton(fancy("🌐 ʟᴀɴɢᴜᴀɢᴇ"), callback_data="language")],
-                [InlineKeyboardButton(fancy("🏠 ʜᴏᴍᴇ"), callback_data="main_menu")]
-            ])
-        )
-
-    # ── ORDERS ──────────────────────────────
+    # ── MY ORDERS ──────────────────────────────
     elif data == "orders":
         docs = await orders_col.find({"user_id":user_id}).sort("created_at",-1).limit(8).to_list(8)
         if not docs:
@@ -664,7 +743,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kb.insert(0, [InlineKeyboardButton(fancy("📩 ʀᴇ-ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ"), callback_data=f"resend_{docs[0]['phone']}")])
         await query.edit_message_text("\n\n".join(lines), reply_markup=InlineKeyboardMarkup(kb))
 
-    # ── HISTORY ─────────────────────────────
+    # ── HISTORY ──────────────────────────────────
     elif data == "history":
         orders = await orders_col.find({"user_id":user_id}).sort("created_at",-1).limit(6).to_list(6)
         deps = await deposits_col.find({"user_id":user_id}).sort("created_at",-1).limit(5).to_list(5)
@@ -686,7 +765,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(fancy("🏠 ʜᴏᴍᴇ"), callback_data="main_menu")]
         ]))
 
-    # ── DEPOSIT ─────────────────────────────
+    # ── DEPOSIT ──────────────────────────────────
     elif data == "deposit":
         pkgs = await packages_col.find({}).sort("credits",1).to_list(None)
         rows = []
@@ -760,19 +839,17 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(fancy("◀️ ʙᴀᴄᴋ"), callback_data="deposit")]
             ]
             if qr:
-                # Send photo separately because can't embed in edit
                 await context.bot.send_photo(
                     chat_id=user_id,
                     photo=io.BytesIO(qr),
                     caption=msg,
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
-                await query.delete_message()  # remove the previous menu
+                await query.delete_message()
             else:
                 await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(buttons))
 
         elif method == "usdt":
-            # USDT network selection
             await query.edit_message_text(
                 fancy(f"₿ **sᴇʟᴇᴄᴛ Nᴇᴛᴡᴏʀᴋ ғᴏʀ USDT Dᴇᴘᴏsɪᴛ**\n\nᴄʜᴏᴏsᴇ ᴛʜᴇ ʙʟᴏᴄᴋᴄʜᴀɪɴ ɴᴇᴛᴡᴏʀᴋ ʏᴏᴜ ᴡɪsʜ ᴛᴏ sᴇɴᴅ USDT ᴏɴ:"),
                 reply_markup=InlineKeyboardMarkup([
@@ -803,7 +880,6 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Package error.", show_alert=True)
             return
         usdt_amount = pkg["usdt"]
-        # Get address from settings
         if network == "bsc":
             addr = await get_setting("usdt_bsc_address", "0x1566526a5bacc92f44ad5a2df372b68759fc3721")
         elif network == "trc20":
@@ -907,7 +983,36 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-    # ── LANGUAGE ─────────────────────────────
+    # ── PROFILE ──────────────────────────────────
+    elif data == "profile":
+        user = await get_or_create_user(user_id)
+        bal = float(user.get("balance",0))
+        wd = float(user.get("withdrawable",0))
+        orders_count = await orders_col.count_documents({"user_id":user_id})
+        deps_count = await deposits_col.count_documents({"user_id":user_id})
+        tier = user.get("tier","⭐")
+        lang = user.get("language","en")
+        await query.edit_message_text(
+            fancy(
+                f"👤 **ᴘʀᴏꜰɪʟᴇ**\n\n"
+                f"🆔 ɪᴅ: `{user_id}`\n"
+                f"🏅 ᴛɪᴇʀ: {tier}\n"
+                f"💰 ᴀᴠᴀɪʟᴀʙʟᴇ ᴄʀᴇᴅɪᴛs: `{bal:.2f}`\n"
+                f"💳 ᴡɪᴛʜᴅʀᴀᴡᴀʙʟᴇ: `{wd:.2f}`\n"
+                f"📦 ᴏʀᴅᴇʀs: `{orders_count}`\n"
+                f"💳 ᴅᴇᴘᴏsɪᴛs: `{deps_count}`\n"
+                f"🌐 ʟᴀɴɢᴜᴀɢᴇ: `{lang}`"
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(fancy("📋 ᴏʀᴅᴇʀs"), callback_data="orders"),
+                 InlineKeyboardButton(fancy("📜 ʜɪsᴛᴏʀʏ"), callback_data="history")],
+                [InlineKeyboardButton(fancy("🎁 ʀᴇꜰᴇʀʀᴀʟ"), callback_data="referral"),
+                 InlineKeyboardButton(fancy("🌐 ʟᴀɴɢᴜᴀɢᴇ"), callback_data="language")],
+                [InlineKeyboardButton(fancy("🏠 ʜᴏᴍᴇ"), callback_data="main_menu")]
+            ])
+        )
+
+    # ── LANGUAGE ──────────────────────────────────
     elif data == "language":
         langs = [
             ("🇬🇧 English","en"),("🇮🇳 हिन्दी","hi"),("🇷🇺 Русский","ru"),
@@ -926,7 +1031,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang_code = data.split(":")[1]
         await users_col.update_one({"user_id":user_id}, {"$set":{"language":lang_code}})
         await query.answer(f"✅ Language set to {lang_code}", show_alert=True)
-        # Refresh profile
+        # refresh profile
         await query.edit_message_text(
             fancy("👤 **ᴘʀᴏꜰɪʟᴇ**\n\nʟᴀɴɢᴜᴀɢᴇ ᴜᴘᴅᴀᴛᴇᴅ."),
             reply_markup=InlineKeyboardMarkup([
@@ -934,7 +1039,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-    # ── REFERRAL ─────────────────────────────
+    # ── REFERRAL ──────────────────────────────────
     elif data == "referral":
         user = await get_or_create_user(user_id)
         pct = float(await get_setting("referral_percent",3.0))
@@ -959,7 +1064,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-    # ── HELP ─────────────────────────────────
+    # ── HELP ──────────────────────────────────────
     elif data == "help":
         await query.edit_message_text(
             fancy("❓ **ʜᴇʟᴘ ᴄᴇɴᴛᴇʀ**\n\nᴄʜᴏᴏsᴇ ᴀ ᴛᴏᴘɪᴄ ʙᴇʟᴏᴡ:"),
@@ -1030,7 +1135,16 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             )
 
-    # ── ADMIN ─────────────────────────────────
+    # ── WHATSAPP ──────────────────────────────────
+    elif data == "whatsapp":
+        await query.edit_message_text(
+            fancy("💬 **ᴡʜᴀᴛsᴀᴘᴘ**\n\nᴄᴏɴᴛᴀᴄᴛ ᴏᴜʀ ᴡʜᴀᴛsᴀᴘᴘ sᴜᴘᴘᴏʀᴛ ғᴏʀ ᴀssɪsᴛᴀɴᴄᴇ."),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(fancy("🏠 ʜᴏᴍᴇ"), callback_data="main_menu")]
+            ])
+        )
+
+    # ─── ADMIN ─────────────────────────────────────
     elif data == "admin":
         if not await is_admin(user_id):
             await query.answer("❌ Access denied.", show_alert=True)
@@ -1178,8 +1292,6 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             )
             return
-        # Show first pending deposit
-        # We'll send each as separate message
         for dep in deps:
             dep_id = str(dep["_id"])
             uid = dep["user_id"]
@@ -1209,9 +1321,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if claim.matched_count == 0:
             await query.answer("⚠️ Already processed.", show_alert=True)
             return
-        # Add balance
         await users_col.update_one({"user_id":uid}, {"$inc":{"balance":amount,"withdrawable":amount}})
-        # referral bonus for referrer if exists
         buyer = await users_col.find_one({"user_id":uid})
         if buyer and buyer.get("referred_by"):
             pct = float(await get_setting("referral_percent",3.0))
@@ -1390,11 +1500,17 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new = not c.get("is_active", True)
         await countries_col.update_one({"code":code}, {"$set":{"is_active":new}})
         await query.answer(f"{'Enabled' if new else 'Disabled'} {code}")
-        # Refresh country list
-        await callback(update, context)  # Simulate re-call of acountries? Better to just edit again.
+        # refresh list
+        c_list = await countries_col.find({}).to_list(50)
+        rows = []
+        for c in c_list:
+            em = "✅" if c.get("is_active") else "❌"
+            rows.append([InlineKeyboardButton(f"{em} {c['flag']} {c['name']} — {c['price']} ᴄʀ", callback_data=f"ctoggle:{c['code']}")])
+        rows.append([InlineKeyboardButton(fancy("➕ ᴀᴅᴅ ᴄᴏᴜɴᴛʀʏ"), callback_data="add_country"),
+                     InlineKeyboardButton(fancy("◀️ ʙᴀᴄᴋ"), callback_data="admin")])
         await query.edit_message_text(
             fancy("🌍 **ᴄᴏᴜɴᴛʀɪᴇs** (ᴛᴀᴘ ᴛᴏ ᴛᴏɢɢʟᴇ):"),
-            reply_markup=await get_country_buttons()  # need to define this helper
+            reply_markup=InlineKeyboardMarkup(rows)
         )
 
     elif data == "add_country":
@@ -1509,7 +1625,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.answer("Unknown action.")
 
-# ─── MESSAGE HANDLER (for text/file inputs) ────────────
+# ─── MESSAGE HANDLER ──────────────────────────────
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text or ""
@@ -1519,7 +1635,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = state_data.get("state") if isinstance(state_data, dict) else state_data
 
-    # ── CUSTOM DEPOSIT ──────────────────────────
     if state == "custom_deposit":
         try:
             amount = float(text.strip().replace(",",""))
@@ -1554,10 +1669,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         user_states.pop(user_id, None)
 
-    # ── WAITING FOR ZIP ──────────────────────────
     elif state == "waiting_zip":
         if not update.message.document and not update.message.photo:
-            # treat as 2fa password
             twofa = text.strip()
             user_states[user_id] = {**state_data, "twofa_password":twofa}
             await update.message.reply_text(
@@ -1567,10 +1680,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             )
             return
-        # File upload
         file = await update.message.document.get_file()
         file_bytes = await file.download_as_bytearray()
-        # Process ZIP or .session
         if update.message.document.file_name.lower().endswith('.session'):
             ss = await _session_file_to_string(bytes(file_bytes))
             if not ss:
@@ -1595,7 +1706,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_states.pop(user_id, None)
             return
 
-        # ZIP
         try:
             zf = zipfile.ZipFile(io.BytesIO(file_bytes))
         except Exception as e:
@@ -1621,7 +1731,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         added = 0
         skipped = 0
         errors = []
-        sem = asyncio.Semaphore(5)
         async def process_one(name):
             nonlocal added, skipped
             phone = _phone_from_filename(name)
@@ -1659,7 +1768,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_states.pop(user_id, None)
         zf.close()
 
-    # ── BROADCAST ────────────────────────────────
     elif state == "broadcast":
         user_states.pop(user_id, None)
         prog = await update.message.reply_text(fancy("📢 ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ…"))
@@ -1679,7 +1787,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.05)
         await prog.edit_text(fancy(f"✅ ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴘʟᴇᴛᴇ — {count} sᴇɴᴛ, {fail} ꜰᴀɪʟᴇᴅ."))
 
-    # ── SETTINGS HANDLERS ──────────────────────────
     elif state == "setting_botname":
         await set_setting("bot_name", text.strip())
         user_states.pop(user_id, None)
@@ -1902,7 +2009,6 @@ async def approve_deposit(deposit_id: str):
     amount = dep["amount"]
     credits = dep.get("credits",0)
     await users_col.update_one({"user_id":uid}, {"$inc":{"balance":amount,"withdrawable":amount}})
-    # Referral bonus for referrer
     buyer = await users_col.find_one({"user_id":uid})
     if buyer and buyer.get("referred_by"):
         pct = float(await get_setting("referral_percent",3.0))
@@ -1974,29 +2080,22 @@ def start_health_server():
 # ─── MAIN ──────────────────────────────────────
 async def main():
     global acc_mgr, application
-    # Init DB
     await init_db()
 
-    # Start health server
     threading.Thread(target=start_health_server, daemon=True).start()
 
-    # Create PTB application
     application = Application.builder().token(BOT_TOKEN).build()
-
-    # Register handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(callback))
     application.add_handler(MessageHandler(filters.TEXT | filters.Document.ALL | filters.PHOTO, handle_message))
 
-    # Initialize AccountManager
     acc_mgr = account_manager.AccountManager(accounts_col, application.bot, API_ID, API_HASH, pending_otp)
     await acc_mgr.load_all()
 
-    # Self-ping
     if RENDER_EXTERNAL_URL:
         asyncio.create_task(self_ping())
 
-    log.info("🚀 Starting PTB bot...")
+    log.info("🚀 Starting PTB bot with all features...")
     await application.run_polling(allowed_updates=["message", "callback_query"])
 
 if __name__ == "__main__":
