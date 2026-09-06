@@ -2,11 +2,11 @@ import re
 import asyncio
 import logging
 from typing import Dict, Optional
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events, Button, types
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 
-# ─── Fancy text (small caps) ──────────────────────────────────────
+# ─── Fancy text (small caps / ᴍʏsᴇʟғ) ──────────────────────────────
 _SMALL_CAPS = {
     'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ',
     'f': 'ғ', 'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ',
@@ -17,6 +17,10 @@ _SMALL_CAPS = {
 }
 def _fancy(text: str) -> str:
     return ''.join(_SMALL_CAPS.get(ch.lower(), ch) for ch in text)
+
+# Color Button Helper (Primary Blue, Danger Red)
+def color_btn(text, data, style="default"):
+    return types.KeyboardButtonCallback(text=_fancy(text), data=data.encode(), style=style)
 
 log = logging.getLogger("NextLevelVault")
 
@@ -71,19 +75,20 @@ class AccountManager:
             if not buyer_id:
                 return
 
-            # ── Build message with fancy heading ──────────────────
-            msg = f"{_fancy('📞 ᴘʜᴏɴᴇ')}: `{phone}`\n{_fancy('📩 ᴏᴛᴘ')}: `{otp}`"
+            # ── Build message with fancy heading + Bullet Points ─────
+            msg = f"{_fancy('• 📞 ᴘʜᴏɴᴇ')}: `{phone}`\n{_fancy('• 📩 ᴏᴛᴘ')}: `{otp}`"
             twofa = buyer_doc.get("twofa_password")
             if twofa:
-                msg += f"\n{_fancy('🔐 2ꜰᴀ ᴘᴀssᴡᴏʀᴅ')}: `{twofa}`"
+                msg += f"\n{_fancy('• 🔐 2ꜰᴀ ᴘᴀssᴡᴏʀᴅ')}: `{twofa}`"
             msg += _fancy(
                 "\n\n⚠️ ɴᴏᴛᴇ: ʀᴇ-ʀᴇǫᴜᴇsᴛ ʙᴜᴛᴛᴏɴ ᴡᴏʀᴋs ғᴏʀ 72 ʜᴏᴜʀs."
                 " ᴀғᴛᴇʀ ᴛʜᴀᴛ, ʀᴇǫᴜᴇsᴛ ᴀ ɴᴇᴡ ɴᴜᴍʙᴇʀ."
             )
 
+            # ── Colored Buttons (Primary: Blue, Danger: Red) ─────────
             buttons = [[
-                Button.inline("🔄 ʀᴇǫᴜᴇsᴛ ɴᴇᴡ ᴏᴛᴘ", f"resend_{phone}".encode()),
-                Button.inline("🔓 ʟᴏɢᴏᴜᴛ ғʀᴏᴍ ʙᴏᴛ", f"logout_{phone}".encode()),
+                color_btn("🔄 ʀᴇǫᴜᴇsᴛ ɴᴇᴡ ᴏᴛᴘ", f"resend_{phone}", "primary"),
+                color_btn("🔓 ʟᴏɢᴏᴜᴛ ғʀᴏᴍ ʙᴏᴛ", f"logout_{phone}", "danger"),
             ]]
 
             try:
