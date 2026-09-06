@@ -457,12 +457,20 @@ def fancy(text: str) -> str:
     return ''.join(_SMALL_CAPS.get(ch.lower(), ch) for ch in text)
 
 # ─── 16. KEYBOARD BUILDERS ──────────────────────────────────────
-# Updated: Added `style=style` for Color Support (Telethon 2.0.0)
+# FIX: Telethon 1.36.0 Style Support (KeyboardButtonStyle Object)
 def color_btn(text, data, style="default"):
+    style_obj = None
+    if style == "success":
+        style_obj = types.KeyboardButtonStyle(bg_success=True)
+    elif style == "danger":
+        style_obj = types.KeyboardButtonStyle(bg_danger=True)
+    elif style == "primary":
+        style_obj = types.KeyboardButtonStyle(bg_primary=True)
+    
     return types.KeyboardButtonCallback(
         text=fancy(text),
         data=data.encode(),
-        style=style
+        style=style_obj
     )
 
 async def main_menu_buttons(user_id: int) -> list:
@@ -560,12 +568,13 @@ async def cmd_start(event):
         return
 
     first_name = (await event.get_sender()).first_name or "User"
+    # FIX: Added space after {first_name}
     raw_welcome = (
-        f"❄️ ᴡᴇʟᴄᴏᴍᴇ {first_name} ᴛᴏ ᴛʜᴇ Nᴇxᴛ Lᴇᴠᴇʟ Vᴀᴜʟᴛ 🔥\n\n"
-        "✅ ʙᴜʏ Tᴇʟᴇɢʀᴀᴍ Aᴄᴄᴏᴜɴᴛs — ɢᴇᴛ ʟᴏɢɪɴ OTP & 2FA ᴘᴀssᴡᴏʀᴅ ɪɴsᴛᴀɴᴛʟʏ 🤍\n"
-        "✅ Dᴇᴘᴏsɪᴛ ᴠɪᴀ UPI — ǫᴜɪᴄᴋ ᴀɴᴅ ᴇᴀsʏ 🤍\n"
-        "✅ Mᴜʟᴛɪᴘʟᴇ Cᴏᴜɴᴛʀɪᴇs — ᴄʜᴏᴏsᴇ ʏᴏᴜʀ ᴄᴏᴜɴᴛʀʏ ᴀɴᴅ ᴘʀɪᴄᴇ 🤍\n\n"
-        "🟢 ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ sᴛᴀʀᴛᴇᴅ 👇"
+        f"❄️ Welcome {first_name} to the Next Level VAULT 🔥\n\n"
+        "✅ Buy Telegram Accounts — get login OTP & 2FA password instantly 🤍\n"
+        "✅ Deposit via UPI  — quick and easy. 🤍\n"
+        "✅ Multiple Countries — choose your country and price 🤍\n\n"
+        "🟢 Use the buttons below to get started 👇"
     )
     welcome_msg = fancy(raw_welcome)
 
@@ -805,6 +814,7 @@ async def callback_router(event):
     elif data.startswith("resend_"):
         phone = data[7:]
         await event.answer("⏳ Requesting OTP…", alert=False)
+        # FIX: Removed "call=False"
         success = await acc_mgr.request_otp(phone)
         if success:
             await event.respond(f"📤 OTP request sent for `{phone}`.")
