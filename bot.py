@@ -457,34 +457,42 @@ def fancy(text: str) -> str:
     return ''.join(_SMALL_CAPS.get(ch.lower(), ch) for ch in text)
 
 # ─── 16. KEYBOARD BUILDERS ──────────────────────────────────────
+# Color Button Helper (Step 8: Color support)
+def color_btn(text, data, style="default"):
+    return types.KeyboardButtonCallback(text=fancy(text), data=data.encode(), style=style)
+
 async def main_menu_buttons(user_id: int) -> list:
-    rows = [
-        [Button.inline("🛒 ʙᴜʏ ᴀᴄᴄᴏᴜɴᴛ", b"store"),
-         Button.inline("💳 ᴀᴅᴅ ᴄʀᴇᴅɪᴛs", b"deposit")],
-        [Button.inline("👤 ᴍʏ ᴘʀᴏꜰɪʟᴇ", b"profile"),
-         Button.inline("📋 ᴍʏ ᴏʀᴅᴇʀs", b"orders")],
-        [Button.inline("👥 ʀᴇꜰᴇʀʀᴀʟ", b"referral"),
-         Button.inline("📜 ʜɪsᴛᴏʀʏ", b"history")],
-    ]
-    support = await get_setting("support_link")
-    if support:
-        rows.append([Button.url("📞 sᴜᴘᴘᴏʀᴛ", support)])
-    else:
-        rows.append([Button.inline("❓ ʜᴇʟᴘ", b"help")])
+    rows = []
+    # Step 1: Remove Event, Sell, More Bots. Colored Buttons.
+    rows.append([color_btn("✈️ ʙᴜʏ ᴛᴇʟᴇɢʀᴀᴍ ᴀᴄᴄᴏᴜɴᴛ", "store", "success")])
+    
+    # WhatsApp only if enabled
     if await get_setting("whatsapp_enabled", False):
-        rows.append([Button.inline("💬 ᴡʜᴀᴛsᴀᴘᴘ", b"whatsapp")])
+        rows.append([color_btn("💬 ʙᴜʏ ᴡʜᴀᴛsᴀᴘᴘ", "whatsapp", "primary")])
+    
+    rows.append([color_btn("💳 ᴀᴅᴅ ᴄʀᴇᴅɪᴛs", "deposit", "success")])
+    
+    # 2 per row grid (Step 2)
+    rows.append([
+        color_btn("👤 ᴍʏ ᴘʀᴏꜰɪʟᴇ", "profile", "primary"),
+        color_btn("🌐 ʟᴀɴɢᴜᴀɢᴇ", "language", "primary")
+    ])
+    rows.append([color_btn("❓ ʜᴇʟᴘ", "help", "default")])
+    
     if await is_admin(user_id):
-        rows.append([Button.inline("⚙️ ᴀᴅᴍɪɴ ᴘᴀɴᴇʟ", b"admin")])
+        rows.append([color_btn("⚙️ ᴀᴅᴍɪɴ ᴘᴀɴᴇʟ", "admin", "danger")])
+    
     return rows
 
 def _category_buttons(categories: List[dict]) -> list:
     rows = []
-    for cat in categories:
-        rows.append([Button.inline(
-            f"{cat['icon']} {cat['name']}",
-            f"category:{cat['name']}".encode()
-        )])
-    rows.append([Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")])
+    # Step 2: 2 buttons per row grid
+    for i in range(0, len(categories), 2):
+        row = []
+        for cat in categories[i:i+2]:
+            row.append(color_btn(f"{cat['icon']} {fancy(cat['name'])}", f"category:{cat['name']}", "default"))
+        rows.append(row)
+    rows.append([color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")])
     return rows
 
 def _inventory_buttons(countries: List[dict], page: int = 0, per_page: int = 8) -> list:
@@ -492,39 +500,42 @@ def _inventory_buttons(countries: List[dict], page: int = 0, per_page: int = 8) 
     start = page * per_page
     end   = min(start + per_page, total)
     rows  = []
-    for c in countries[start:end]:
-        stock = c["stock"]
-        price = c["price"]
-        info_text = f"{c['flag']} {c['name']}  {stock}  ₹{price:.0f}"
-        rows.append([
-            Button.inline(info_text, f"detail:{c['code']}".encode()),
-            Button.inline("🟢 ʙᴜʏ", f"buy:{c['code']}".encode())
-        ])
+    # Step 2/3: 2 buttons per row grid
+    for i in range(start, end, 2):
+        row = []
+        for c in countries[i:i+2]:
+            stock = c["stock"]
+            price = c["price"]
+            # Step 3: Credit system (cr) instead of ₹
+            info_text = f"{c['flag']} {fancy(c['name'])} | {stock} | {price} ᴄʀ"
+            row.append(color_btn(info_text, f"buy:{c['code']}", "default"))
+        rows.append(row)
+    
     nav = []
     if page > 0:
-        nav.append(Button.inline("◀️", f"store_page:{page-1}".encode()))
-    nav.append(Button.inline(f"{page+1}/{(total-1)//per_page + 1}", b"store_noop"))
+        nav.append(color_btn("◀️", f"store_page:{page-1}", "default"))
+    nav.append(color_btn(f"{page+1}/{(total-1)//per_page + 1}", "store_noop", "default"))
     if end < total:
-        nav.append(Button.inline("▶️", f"store_page:{page+1}".encode()))
+        nav.append(color_btn("▶️", f"store_page:{page+1}", "default"))
     if nav:
         rows.append(nav)
-    rows.append([Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")])
+    rows.append([color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")])
     return rows
 
 def _admin_menu_buttons(is_owner_flag: bool) -> list:
     rows = [
-        [Button.inline("📊 sᴛᴀᴛs", b"astats")],
-        [Button.inline("📦 ᴜᴘʟᴏᴀᴅ sᴇssɪᴏɴs", b"upload_sessions"),
-         Button.inline("📋 sᴇssɪᴏɴ ᴏᴠᴇʀᴠɪᴇᴡ", b"manage_sessions")],
-        [Button.inline("💳 ᴘᴇɴᴅɪɴɢ ᴅᴇᴘᴏsɪᴛs", b"pending_deposits")],
-        [Button.inline("📢 ʙʀᴏᴀᴅᴄᴀsᴛ", b"broadcast")],
-        [Button.inline("⚙️ sᴇᴛᴛɪɴɢs", b"asettings"),
-         Button.inline("🌍 ᴄᴏᴜɴᴛʀɪᴇs", b"acountries")],
-        [Button.inline("👤 ᴜsᴇʀs", b"ausers")],
+        [color_btn("📊 sᴛᴀᴛs", "astats", "primary")],
+        [color_btn("📦 ᴜᴘʟᴏᴀᴅ sᴇssɪᴏɴs", "upload_sessions", "primary"),
+         color_btn("📋 sᴇssɪᴏɴ ᴏᴠᴇʀᴠɪᴇᴡ", "manage_sessions", "primary")],
+        [color_btn("💳 ᴘᴇɴᴅɪɴɢ ᴅᴇᴘᴏsɪᴛs", "pending_deposits", "primary")],
+        [color_btn("📢 ʙʀᴏᴀᴅᴄᴀsᴛ", "broadcast", "primary")],
+        [color_btn("⚙️ sᴇᴛᴛɪɴɢs", "asettings", "primary"),
+         color_btn("🌍 ᴄᴏᴜɴᴛʀɪᴇs", "acountries", "primary")],
+        [color_btn("👤 ᴜsᴇʀs", "ausers", "primary")],
     ]
     if is_owner_flag:
-        rows.append([Button.inline("🔑 ᴍᴀɴᴀɢᴇ ᴀᴅᴍɪɴs", b"manage_admins")])
-    rows.append([Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")])
+        rows.append([color_btn("🔑 ᴍᴀɴᴀɢᴇ ᴀᴅᴍɪɴs", "manage_admins", "primary")])
+    rows.append([color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")])
     return rows
 
 # ─── 17. /start COMMAND ─────────────────────────────────────────
@@ -551,13 +562,13 @@ async def cmd_start(event):
         return
 
     first_name = (await event.get_sender()).first_name or "User"
-    # FIX: Added space after {first_name}
+    # Step 1: Welcome message
     raw_welcome = (
-        f"❄️ Welcome {first_name} to the Next Level VAULT 🔥\n\n"
-        "✅ Buy Telegram Accounts — get login OTP & 2FA password instantly 🤍\n"
-        "✅ Deposit via UPI  — quick and easy. 🤍\n"
-        "✅ Multiple Countries — choose your country and price 🤍\n\n"
-        "🟢 Use the buttons below to get started 👇"
+        f"❄️ ᴡᴇʟᴄᴏᴍᴇ {first_name} ᴛᴏ ᴛʜᴇ Nᴇxᴛ Lᴇᴠᴇʟ Vᴀᴜʟᴛ 🔥\n\n"
+        "✅ ʙᴜʏ Tᴇʟᴇɢʀᴀᴍ Aᴄᴄᴏᴜɴᴛs — ɢᴇᴛ ʟᴏɢɪɴ OTP & 2FA ᴘᴀssᴡᴏʀᴅ ɪɴsᴛᴀɴᴛʟʏ 🤍\n"
+        "✅ Dᴇᴘᴏsɪᴛ ᴠɪᴀ UPI — ǫᴜɪᴄᴋ ᴀɴᴅ ᴇᴀsʏ 🤍\n"
+        "✅ Mᴜʟᴛɪᴘʟᴇ Cᴏᴜɴᴛʀɪᴇs — ᴄʜᴏᴏsᴇ ʏᴏᴜʀ ᴄᴏᴜɴᴛʀʏ ᴀɴᴅ ᴘʀɪᴄᴇ 🤍\n\n"
+        "🟢 ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ɢᴇᴛ sᴛᴀʀᴛᴇᴅ 👇"
     )
     welcome_msg = fancy(raw_welcome)
 
@@ -594,7 +605,7 @@ async def callback_router(event):
         user_states.pop(user_id, None)
         bot_name = await get_setting("bot_name", "Next Level Vault")
         await event.edit(
-            fancy(f"🏠 {bot_name}\n\nChoose an option:"),
+            fancy(f"🏠 {bot_name}\n\nᴄʜᴏᴏsᴇ ᴀɴ ᴏᴘᴛɪᴏɴ:"),
             buttons=await main_menu_buttons(user_id),
         )
 
@@ -610,7 +621,7 @@ async def callback_router(event):
     elif data == "store":
         cats = await get_categories()
         await event.edit(
-            fancy("📂 **sᴇʟᴇᴄᴛ ᴄᴀᴛᴇɢᴏʀʏ**\n\nᴛᴀᴘ ᴀ ᴄᴀᴛᴇɢᴏʀʏ ʙᴇʟᴏᴡ:"),
+            fancy("📂 **sᴇʟᴇᴄᴛ ᴄᴀᴛᴇɢᴏʀʏ**\n\n👆 ᴛᴀᴘ ᴀ ᴄᴀᴛᴇɢᴏʀʏ ʙᴇʟᴏᴡ:"),
             buttons=_category_buttons(cats)
         )
 
@@ -621,7 +632,7 @@ async def callback_router(event):
         if not countries:
             await event.edit(
                 fancy(f"😔 **ɴᴏ ᴀᴄᴄᴏᴜɴᴛs ɪɴ '{cat_name}'.**\n\nᴛʀʏ ᴀɴᴏᴛʜᴇʀ ᴄᴀᴛᴇɢᴏʀʏ."),
-                buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"store")]]
+                buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "store", "default")]]
             )
             return
         await event.edit(
@@ -654,17 +665,18 @@ async def callback_router(event):
             "status": "available",
             "category": cat_name
         })
+        # Step 3: Credit system (cr)
         text = fancy(
             f"🌍 **{c['flag']} {c['name']}**\n\n"
-            f"📦 sᴛᴏᴄᴋ: `{stock}`\n"
-            f"💰 ᴘʀɪᴄᴇ: `₹{c['price']:.2f}`\n"
-            f"📂 ᴄᴀᴛᴇɢᴏʀʏ: `{cat_name or 'ɢᴇɴᴇʀᴀʟ'}`\n\n"
+            f"• sᴛᴏᴄᴋ: `{stock}`\n"
+            f"• ᴘʀɪᴄᴇ: `{c['price']} ᴄʀ`\n"
+            f"• ᴄᴀᴛᴇɢᴏʀʏ: `{cat_name or 'ɢᴇɴᴇʀᴀʟ'}`\n\n"
             "ᴘᴜʀᴄʜᴀsᴇ ᴜsɪɴɢ ᴛʜᴇ ʙᴜʏ ʙᴜᴛᴛᴏɴ."
         )
         await event.edit(text, buttons=[
-            [Button.inline("🟢 ʙᴜʏ ɴᴏᴡ", f"buy:{code}".encode()),
-             Button.inline("◀️ ʙᴀᴄᴋ", b"store")],
-            [Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]
+            [color_btn("🟢 ʙᴜʏ ɴᴏᴡ", f"buy:{code}", "success"),
+             color_btn("◀️ ʙᴀᴄᴋ", "store", "default")],
+            [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]
         ])
 
     # ── BUY ──────────────────────────────────────────────────────
@@ -686,30 +698,37 @@ async def callback_router(event):
         if not user:
             user = await get_or_create_user(user_id)
         bal = float(user.get("balance", 0))
-        price = float(country["price"])
+        price = float(country["price"]) # Price in Credits (cr)
+        
+        # Step 4: Insufficient Funds
         if bal < price:
             needed = price - bal
             text = fancy(
-                f"❌ **ɪɴsᴜꜰꜰɪᴄɪᴇɴᴛ ʙᴀʟᴀɴᴄᴇ**\n\n"
-                f"ʏᴏᴜ ɴᴇᴇᴅ `₹{needed:.2f}` ᴍᴏʀᴇ.\n"
-                f"ᴘʟᴇᴀsᴇ ᴀᴅᴅ ᴄʀᴇᴅɪᴛs."
+                f"⚠️ **ɪɴsᴜꜰꜰɪᴄɪᴇɴᴛ ꜰᴜɴᴅs**\n\n"
+                f"ᴀᴄᴄᴏᴜɴᴛ: {country['flag']} {country['name']} (+••••••••)\n"
+                f"ᴘʀɪᴄᴇ: `{price} ᴄʀ`\n"
+                f"ᴀᴠᴀɪʟᴀʙʟᴇ ꜰᴜɴᴅs: `{bal} ᴄʀ`\n"
+                f"sʜᴏʀᴛ ʙʏ: `{needed} ᴄʀ`\n\n"
+                "ᴘʟᴇᴀsᴇ ᴀᴅᴅ ꜰᴜɴᴅs ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ ᴡɪᴛʜ ᴛʜɪs ᴘᴜʀᴄʜᴀsᴇ."
             )
             await event.edit(text, buttons=[
-                [Button.inline("💳 ᴀᴅᴅ ᴄʀᴇᴅɪᴛs", b"deposit")],
-                [Button.inline("◀️ ʙᴀᴄᴋ", b"store")]
+                [color_btn("+1 ᴀᴅᴅ ꜰᴜɴᴅs", "deposit", "success")],
+                [color_btn("◀️ ʙᴀᴄᴋ", "store", "default")],
+                [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]
             ])
             return
-        # Confirm purchase
+        
+        # Confirm purchase (Step 4: Big Buy Button)
         text = fancy(
             f"⚡ **ᴄᴏɴꜰɪʀᴍ ᴘᴜʀᴄʜᴀsᴇ**\n\n"
             f"🌍 ᴄᴏᴜɴᴛʀʏ: {country['flag']} {country['name']}\n"
-            f"💰 ᴘʀɪᴄᴇ: `₹{price:.2f}`\n"
-            f"💎 ʏᴏᴜʀ ʙᴀʟᴀɴᴄᴇ: `₹{bal:.2f}`"
+            f"💰 ᴘʀɪᴄᴇ: `{price} ᴄʀ`\n"
+            f"💎 ʏᴏᴜʀ ʙᴀʟᴀɴᴄᴇ: `{bal} ᴄʀ`"
         )
         await event.edit(text, buttons=[
-            [Button.inline("✅ ᴄᴏɴꜰɪʀᴍ", f"confirm_buy:{code}".encode()),
-             Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"store")],
-            [Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]
+            [color_btn(f"✅ ʙᴜʏ ᴛʜɪs ᴀᴄᴄᴏᴜɴᴛ · {price} ᴄʀ", f"confirm_buy:{code}", "success")],
+            [color_btn("❌ ᴄᴀɴᴄᴇʟ", "store", "danger")],
+            [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]
         ])
 
     # ── CONFIRM BUY ──────────────────────────────────────────────
@@ -719,7 +738,7 @@ async def callback_router(event):
         if not country:
             await event.answer("❌ Country no longer available.", alert=True)
             return
-        price = float(country["price"])
+        price = float(country["price"]) # Credits
         if not user:
             user = await get_or_create_user(user_id)
         bal = float(user.get("balance", 0))
@@ -775,25 +794,24 @@ async def callback_router(event):
         })
         pending_otp_requests[(user_id, phone)] = True
 
+        # Step 4/7: Purchase success + OTP Request
         msg = fancy(
             f"✅ **ᴘᴜʀᴄʜᴀsᴇ sᴜᴄᴄᴇssꜰᴜʟ!**\n\n"
             f"🌍 ᴄᴏᴜɴᴛʀʏ: {country.get('flag','')} {country['name']}\n"
             f"📞 ᴘʜᴏɴᴇ: `{phone}`\n"
             f"📂 ᴄᴀᴛᴇɢᴏʀʏ: `{cat_name}`\n"
+            f"🔐 2FA: `{twofa}`\n\n"
+            "⏳ ᴘʟᴇᴀsᴇ ᴛᴀᴘ **ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ** ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴄᴏᴅᴇ."
         )
-        if twofa:
-            msg += f"🔐 **2FA:** `{twofa}`\n"
-        msg += "\n⏳ ᴘʟᴇᴀsᴇ ᴛᴀᴘ **ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ** ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴄᴏᴅᴇ."
         await event.edit(msg, buttons=[
-            [Button.inline("📩 ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ", f"resend_{phone}".encode())],
-            [Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")],
+            [color_btn("📩 ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ", f"resend_{phone}", "primary")],
+            [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]
         ])
 
     # ── REQUEST OTP ─────────────────────────────────────────────
     elif data.startswith("resend_"):
         phone = data[7:]
         await event.answer("⏳ Requesting OTP…", alert=False)
-        # FIX: Removed "call=False"
         success = await acc_mgr.request_otp(phone)
         if success:
             await event.respond(f"📤 OTP request sent for `{phone}`.")
@@ -812,7 +830,7 @@ async def callback_router(event):
         await event.answer("✅ Logged out.", alert=False)
         await event.edit(
             fancy(f"🔓 **ʟᴏɢɢᴇᴅ ᴏᴜᴛ**\n\n`{phone}` ʜᴀs ʙᴇᴇɴ ᴅɪsᴄᴏɴɴᴇᴄᴛᴇᴅ."),
-            buttons=[[Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]],
+            buttons=[[color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]],
         )
 
     # ── MY ORDERS ──────────────────────────────────────────────
@@ -823,8 +841,8 @@ async def callback_router(event):
         if not docs:
             await event.edit(
                 fancy("📋 **ᴍʏ ᴏʀᴅᴇʀs**\n\n_ɴᴏ ᴏʀᴅᴇʀs ʏᴇᴛ._"),
-                buttons=[[Button.inline("🛒 ʙᴜʏ ɴᴏᴡ", b"store"),
-                          Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]],
+                buttons=[[color_btn("🛒 ʙᴜʏ ɴᴏᴡ", "store", "success"),
+                          color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]],
             )
             return
         _STATUS = {
@@ -838,17 +856,14 @@ async def callback_router(event):
             st = _STATUS.get(o.get("status", ""), o.get("status", "").title())
             line = (
                 f"**{i}.** {o.get('country_flag','')} **{o.get('country','?')}**  —  {st}\n"
-                f"📱 `{o.get('phone','?')}`  •  ₹{o.get('amount',0):.0f}"
+                f"📱 `{o.get('phone','?')}`  •  {o.get('amount',0):.0f} ᴄʀ"
             )
             if o.get("twofa"):
                 line += f"\n🔐 2FA: `{o['twofa']}`"
             lines.append(line)
-        kb = [[Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]]
+        kb = [[color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]]
         if docs[0].get("status") == "waiting_otp":
-            kb.insert(0, [Button.inline(
-                "📩 ʀᴇ-ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ",
-                f"resend_{docs[0]['phone']}".encode(),
-            )])
+            kb.insert(0, [color_btn("📩 ʀᴇ-ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ", f"resend_{docs[0]['phone']}", "primary")])
         await event.edit("\n\n".join(lines), buttons=kb)
 
     # ── HISTORY ──────────────────────────────────────────────────
@@ -863,15 +878,15 @@ async def callback_router(event):
                       if d.get("status") == "approved")
         lines = [
             fancy("📋 **ʜɪsᴛᴏʀʏ**\n"),
-            f"💸 ᴛᴏᴛᴀʟ sᴘᴇɴᴛ:     `₹{spent:.2f}`",
-            f"💰 ᴛᴏᴛᴀʟ ᴅᴇᴘᴏsɪᴛᴇᴅ: `₹{dep_tot:.2f}`",
+            f"💸 ᴛᴏᴛᴀʟ sᴘᴇɴᴛ:     `{spent:.2f} ᴄʀ`",
+            f"💰 ᴛᴏᴛᴀʟ ᴅᴇᴘᴏsɪᴛᴇᴅ: `{dep_tot:.2f} ᴄʀ`",
         ]
         if orders:
             lines.append("\n🛒 **ʀᴇᴄᴇɴᴛ ᴘᴜʀᴄʜᴀsᴇs:**")
             for o in orders:
                 lines.append(
                     f"• {o.get('country_flag','')} {o.get('country','?')}"
-                    f" — `₹{o.get('amount',0):.0f}` — `{o.get('phone','?')}`"
+                    f" — `{o.get('amount',0):.0f} ᴄʀ` — `{o.get('phone','?')}`"
                 )
         if deps:
             lines.append("\n💰 **ʀᴇᴄᴇɴᴛ ᴅᴇᴘᴏsɪᴛs:**")
@@ -879,11 +894,11 @@ async def callback_router(event):
             for d in deps:
                 lines.append(
                     f"{_DE.get(d.get('status',''),'•')} "
-                    f"₹{d.get('amount',0):.0f} — {d.get('status','').title()}"
+                    f"{d.get('amount',0):.0f} ᴄʀ — {d.get('status','').title()}"
                 )
         await event.edit(
             "\n".join(lines),
-            buttons=[[Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]],
+            buttons=[[color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]],
         )
 
     # ─── DEPOSIT – PACKAGES ──────────────────────────────────────
@@ -892,15 +907,16 @@ async def callback_router(event):
         async for p in packages_col.find({}).sort("credits", 1):
             pkgs.append(p)
         rows = []
-        for p in pkgs:
-            rows.append([Button.inline(
-                f"✅ {p['credits']} ᴄʀᴇᴅɪᴛs · ₹{p['price']}",
-                f"pkg:{p['credits']}".encode()
-            )])
-        rows.append([Button.inline("💡 ᴄᴜsᴛᴏᴍ ᴀᴍᴏᴜɴᴛ", b"custom_deposit")])
-        rows.append([Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")])
+        # Step 5: 2 per row grid
+        for i in range(0, len(pkgs), 2):
+            row = []
+            for p in pkgs[i:i+2]:
+                row.append(color_btn(f"💎 {p['credits']} ᴄʀᴇᴅɪᴛs · ₹{p['price']}", f"pkg:{p['credits']}", "success"))
+            rows.append(row)
+        rows.append([color_btn("✏️ ᴄᴜsᴛᴏᴍ ᴀᴍᴏᴜɴᴛ", "custom_deposit", "default")])
+        rows.append([color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")])
         await event.edit(
-            fancy("💳 **ᴀᴅᴅ ᴄʀᴇᴅɪᴛs**\n\nsᴇʟᴇᴄᴛ ᴀ ᴘᴀᴄᴋᴀɢᴇ ʙᴇʟᴏᴡ:"),
+            fancy("💳 **ᴀᴅᴅ ᴄʀᴇᴅɪᴛs**\n\n• ᴘᴜʀᴄʜᴀsᴇ ᴄʀᴇᴅɪᴛs: `0 ᴄʀ`\n• ᴛᴏᴛᴀʟ ᴘᴜʀᴄʜᴀsɪɴɢ ᴘᴏᴡᴇʀ: `0 ᴄʀ`\n\n⚡ ɪɴsᴛᴀɴᴛ & ᴀᴜᴛᴏᴍᴀᴛᴇᴅ\n💡 ʀᴀᴛᴇ: `1 ᴄʀ = ₹1 / $0.01`\n\nsᴇʟᴇᴄᴛ ᴀ ᴘᴀᴄᴋᴀɢᴇ ʙᴇʟᴏᴡ:"),
             buttons=rows
         )
 
@@ -911,17 +927,15 @@ async def callback_router(event):
             await event.answer("❌ Package not found.", alert=True)
             return
         user_states[user_id] = {"deposit_pkg": credits, "pkg_data": pkg}
+        # Step 6: Payment Methods
         methods = [
-            [Button.inline("💳 ᴜᴘɪ / Qʀ – ₹{}".format(pkg['price']), f"pay_method:upi:{credits}".encode())],
-            [Button.inline("₿ ᴜsᴅᴛ (ᴄʀʏᴘᴛᴏ) – {} USDT".format(pkg['usdt']), f"pay_method:usdt:{credits}".encode())],
-            [Button.inline("⭐ ᴛᴇʟᴇɢʀᴀᴍ sᴛᴀʀs – {} ⭐".format(pkg['stars']), f"pay_method:stars:{credits}".encode())],
-            [Button.inline("◀️ ʙᴀᴄᴋ ᴛᴏ ᴘᴀᴄᴋᴀɢᴇs", b"deposit")]
+            [color_btn(f"🌐 ᴜᴘɪ / Qʀ – ₹{pkg['price']}", f"pay_method:upi:{credits}", "success")],
+            [color_btn(f"₿ ᴜsᴅᴛ (Cʀʏᴘᴛᴏ) – {pkg['usdt']} USDT", f"pay_method:usdt:{credits}", "primary")],
+            [color_btn(f"⭐ ᴛᴇʟᴇɢʀᴀᴍ sᴛᴀʀs – {pkg['stars']} ⭐", f"pay_method:stars:{credits}", "primary")],
+            [color_btn("◀️ ʙᴀᴄᴋ ᴛᴏ ᴘᴀᴄᴋᴀɢᴇs", "deposit", "default")]
         ]
         await event.edit(
-            fancy(f"💳 **sᴇʟᴇᴄᴛ ᴘᴀʏᴍᴇɴᴛ ᴍᴇᴛʜᴏᴅ**\n\n"
-                  f"ᴘᴀᴄᴋᴀɢᴇ: `{credits} ᴄʀᴇᴅɪᴛs`\n"
-                  f"₹{pkg['price']}  |  {pkg['usdt']} USDT  |  {pkg['stars']} ⭐\n\n"
-                  "ᴀʟʟ ᴘᴀʏᴍᴇɴᴛs ᴀʀᴇ ᴠᴇʀɪғɪᴇᴅ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ."),
+            fancy(f"💳 **sᴇʟᴇᴄᴛ ᴘᴀʏᴍᴇɴᴛ ᴍᴇᴛʜᴏᴅ**\n\nᴘᴀᴄᴋᴀɢᴇ: `{credits} ᴄʀᴇᴅɪᴛs`\n₹{pkg['price']} | {pkg['usdt']} USDT | {pkg['stars']} ⭐"),
             buttons=methods
         )
 
@@ -956,11 +970,13 @@ async def callback_router(event):
             qr = _make_upi_qr(upi_id, amount, upi_name)
             upi_deep_link = f"upi://pay?pa={upi_id}&pn={upi_name}&am={amount:.2f}&cu=INR"
 
+            # Step 6: Generating QR message + QR + Buttons
+            await event.respond(fancy("⏳ **ɢᴇɴᴇʀᴀᴛɪɴɢ ᴘᴀʏᴍᴇɴᴛ Qʀ...**"))
             msg = fancy(
-                f"💳 **sᴄᴀɴ & ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ**\n\n"
-                f"ᴀᴍᴏᴜɴᴛ: `₹{amount:.2f}`\n"
-                f"ᴄʀᴇᴅɪᴛs: `+{credits}`\n"
-                f"ᴜᴘɪ ɪᴅ: `{upi_id}`\n\n"
+                f"⚡ **sᴄᴀɴ & ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ**\n\n"
+                f"• ᴀᴍᴏᴜɴᴛ: `₹{amount:.2f}`\n"
+                f"• ꜰᴜɴᴅs: `+{credits}`\n"
+                f"• ᴜᴘɪ ɪᴅ: `{upi_id}`\n\n"
                 "sᴄᴀɴ Qʀ ᴏʀ ᴜsᴇ 'ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ' ʙᴜᴛᴛᴏɴ.\n"
                 "ᴀғᴛᴇʀ ᴘᴀʏɪɴɢ, ᴛᴀᴘ **'ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ'**."
             )
@@ -968,64 +984,93 @@ async def callback_router(event):
                 qr_file = io.BytesIO(qr)
                 qr_file.name = "upi_qr.png"
                 await event.edit(msg, buttons=[
-                    [Button.url("📲 ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ", upi_deep_link)],
-                    [Button.inline("✅ ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ", b"deposit_paid")],
-                    [Button.inline("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", b"check_payment")],
-                    [Button.inline("◀️ ʙᴀᴄᴋ", b"deposit")]
+                    [color_btn("📲 ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ", "upi_app", "primary")],
+                    [color_btn("✅ ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ", "deposit_paid", "success")],
+                    [color_btn("❌ ᴄᴀɴᴄᴇʟ", "cancel_payment", "danger")],
+                    [color_btn("◀️ ʙᴀᴄᴋ", "deposit", "default")]
                 ])
                 await event.respond(file=qr_file)
             else:
                 await event.edit(msg, buttons=[
-                    [Button.url("📲 ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ", upi_deep_link)],
-                    [Button.inline("✅ ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ", b"deposit_paid")],
-                    [Button.inline("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", b"check_payment")],
-                    [Button.inline("◀️ ʙᴀᴄᴋ", b"deposit")]
+                    [color_btn("📲 ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ", "upi_app", "primary")],
+                    [color_btn("✅ ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ", "deposit_paid", "success")],
+                    [color_btn("❌ ᴄᴀɴᴄᴇʟ", "cancel_payment", "danger")],
+                    [color_btn("◀️ ʙᴀᴄᴋ", "deposit", "default")]
                 ])
 
         elif method == "usdt":
-            crypto_addr = await get_setting("usdt_address", "0x1566526a5bacc92f44ad5a2df372b68759fc3721")
-            usdt_amount = pkg["usdt"]
-            deposit_id = str(uuid.uuid4())[:8]
-            await deposits_col.insert_one({
-                "deposit_id": deposit_id,
-                "user_id": user_id,
-                "amount": amount,
-                "credits": credits,
-                "method": "usdt",
-                "status": "pending",
-                "created_at": datetime.utcnow(),
-            })
-            user_states[user_id] = {"deposit_id": deposit_id, "credits": credits, "amount": amount}
-            msg = fancy(
-                f"₿ **ᴜsᴅᴛ ᴅᴇᴘᴏsɪᴛ**\n\n"
-                f"sᴇɴᴅ ᴇxᴀᴄᴛʟʏ **{usdt_amount} USDT** ᴏɴ BSC (BEP20) ᴛᴏ:\n"
-                f"`{crypto_addr}`\n\n"
-                f"ᴄʀᴇᴅɪᴛs: `+{credits}`\n"
-                "ᴀғᴛᴇʀ sᴇɴᴅɪɴɢ, ᴛᴀᴘ **'ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ'**."
+            # Step 6: USDT Network Selection
+            await event.edit(
+                fancy(f"₿ **sᴇʟᴇᴄᴛ Nᴇᴛᴡᴏʀᴋ ғᴏʀ USDT Dᴇᴘᴏsɪᴛ**\n\nᴄʜᴏᴏsᴇ ᴛʜᴇ ʙʟᴏᴄᴋᴄʜᴀɪɴ ɴᴇᴛᴡᴏʀᴋ ʏᴏᴜ ᴡɪsʜ ᴛᴏ sᴇɴᴅ USDT ᴏɴ:"),
+                buttons=[
+                    [color_btn("⭐ BSC (BEP20)", f"usdt_net:bsc:{credits}", "primary")],
+                    [color_btn("⭐ TRC20 (TRON)", f"usdt_net:trc20:{credits}", "success")],
+                    [color_btn("⭐ ERC20 (Ethereum)", f"usdt_net:erc20:{credits}", "primary")],
+                    [color_btn("◀️ ʙᴀᴄᴋ ᴛᴏ ᴘᴀʏᴍᴇɴᴛ ᴍᴇᴛʜᴏᴅs", "deposit", "default")]
+                ]
             )
-            await event.edit(msg, buttons=[
-                [Button.inline("📋 ᴄᴏᴘʏ ᴀᴅᴅʀᴇss", f"copy_addr:{crypto_addr}".encode())],
-                [Button.inline("✅ ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ", b"deposit_paid")],
-                [Button.inline("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", b"check_payment")],
-                [Button.inline("◀️ ʙᴀᴄᴋ", b"deposit")]
-            ])
 
         elif method == "stars":
             stars = pkg["stars"]
+            # Step 6: Stars Placeholder
             msg = fancy(
                 f"⭐ **ᴛᴇʟᴇɢʀᴀᴍ sᴛᴀʀs**\n\n"
                 f"ᴘᴀʏ `{stars} ⭐` ᴛᴏ ɢᴇᴛ `{credits} ᴄʀᴇᴅɪᴛs`.\n"
-                "ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘᴀʏ."
+                "ᴛʜɪs ᴡɪʟʟ ʀᴇᴅɪʀᴇᴄᴛ ᴛᴏ ᴛᴇʟᴇɢʀᴀᴍ's ᴏғғɪᴄɪᴀʟ ᴘᴀʏᴍᴇɴᴛ."
             )
             await event.edit(msg, buttons=[
-                [Button.inline("⭐ ᴘᴀʏ sᴛᴀʀs", f"pay_stars:{credits}".encode())],
-                [Button.inline("◀️ ʙᴀᴄᴋ", b"deposit")]
+                [color_btn("⭐ ᴘᴀʏ sᴛᴀʀs", f"pay_stars:{credits}", "primary")],
+                [color_btn("◀️ ʙᴀᴄᴋ", "deposit", "default")]
             ])
+
+    elif data.startswith("usdt_net:"):
+        _, network, credits_str = data.split(":")
+        credits = int(credits_str)
+        pkg = await packages_col.find_one({"credits": credits})
+        if not pkg: return
+        usdt_amount = pkg["usdt"]
+        
+        # Step 6: Fetching Address
+        await event.edit(fancy("⏳ **ꜰᴇᴛᴄʜɪɴɢ ᴅᴇᴘᴏsɪᴛ ᴀᴅᴅʀᴇss...**"))
+        await asyncio.sleep(1)
+        
+        if network == "bsc":
+            addr = await get_setting("usdt_bsc_address", "0x1566526a5bacc92f44ad5a2df372b68759fc3721")
+        elif network == "trc20":
+            addr = await get_setting("usdt_trc_address", "T...")
+        else:
+            addr = await get_setting("usdt_erc_address", "0x...")
+
+        msg = fancy(
+            f"₿ **USDT Dᴇᴘᴏsɪᴛ**\n\n"
+            f"sᴇɴᴅ ᴇxᴀᴄᴛʟʏ **{usdt_amount} USDT** ᴏɴ {network.upper()} ᴛᴏ:\n"
+            f"`{addr}`\n\n"
+            f"• ᴄʀᴇᴅɪᴛs: `+{credits}`\n"
+            "ᴀғᴛᴇʀ sᴇɴᴅɪɴɢ, ʀᴇᴘʟʏ ᴡɪᴛʜ ᴛʀᴀɴsᴀᴄᴛɪᴏɴ ʜᴀsʜ (TXID).\n"
+            "⏳ ᴛʜɪs ʀᴇǫᴜᴇsᴛ ɪs ᴠᴀʟɪᴅ ғᴏʀ 60 ᴍɪɴᴜᴛᴇs."
+        )
+        await event.edit(msg, buttons=[
+            [color_btn("📋 ᴄᴏᴘʏ ᴅᴇᴘᴏsɪᴛ ᴀᴅᴅʀᴇss", f"copy_addr:{addr}", "success")],
+            [color_btn("📋 ᴄᴏᴘʏ ᴀᴍᴏᴜɴᴛ", f"copy_amount:{usdt_amount}", "primary")],
+            [color_btn("❌ ᴄᴀɴᴄᴇʟ", "cancel_payment", "danger")],
+            [color_btn("◀️ ʙᴀᴄᴋ", "deposit", "default")]
+        ])
 
     elif data.startswith("copy_addr:"):
         addr = data.split(":", 1)[1]
         await event.answer("✅ Address copied to clipboard!", alert=True)
         await event.respond(f"`{addr}`")
+
+    elif data.startswith("copy_amount:"):
+        amt = data.split(":", 1)[1]
+        await event.answer("✅ Amount copied to clipboard!", alert=True)
+        await event.respond(f"`{amt}`")
+
+    elif data == "cancel_payment":
+        dep = await deposits_col.find_one({"user_id": user_id, "status": "pending"}, sort=[("_id", -1)])
+        if dep:
+            await deposits_col.update_one({"dep_id": dep["dep_id"]}, {"$set": {"status": "cancelled"}})
+        await event.edit(fancy("❌ **ᴘᴀʏᴍᴇɴᴛ ᴄᴀɴᴄᴇʟʟᴇᴅ.**\n\nɴᴏ ᴄʜᴀʀɢᴇs ᴡᴇʀᴇ ᴍᴀᴅᴇ."), buttons=[color_btn("◀️ ʙᴀᴄᴋ", "deposit", "default")])
 
     elif data == "deposit_paid":
         state = user_states.get(user_id, {})
@@ -1037,10 +1082,8 @@ async def callback_router(event):
         delay = int(await get_setting("auto_verify_delay", 10))
         asyncio.create_task(_auto_verify_payment(user_id, deposit_id, delay))
         await event.edit(
-            fancy("⏳ **ᴘᴀʏᴍᴇɴᴛ ᴠᴇʀɪғʏɪɴɢ…**\n\n"
-                  "ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ᴀ ғᴇᴡ sᴇᴄᴏɴᴅs.\n"
-                  "ʏᴏᴜ ᴄᴀɴ ᴛᴀᴘ 'ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ' ᴀɴʏᴛɪᴍᴇ."),
-            buttons=[[Button.inline("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", b"check_payment")]]
+            fancy("⏳ **ᴘᴀʏᴍᴇɴᴛ ᴠᴇʀɪғʏɪɴɢ…**\n\nᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ᴀ ғᴇᴡ sᴇᴄᴏɴᴅs.\nʏᴏᴜ ᴄᴀɴ ᴛᴀᴘ 'ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ' ᴀɴʏᴛɪᴍᴇ."),
+            buttons=[[color_btn("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", "check_payment", "primary")]]
         )
 
     elif data == "check_payment":
@@ -1056,13 +1099,20 @@ async def callback_router(event):
         status = dep.get("status")
         if status == "approved":
             await event.edit(
-                fancy("✅ **ᴘᴀʏᴍᴇɴᴛ ᴄᴏɴғɪʀᴍᴇᴅ!**\n\n"
-                      f"`{dep['credits']} ᴄʀᴇᴅɪᴛs` ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ."),
-                buttons=[[Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]]
+                fancy("✅ **ᴘᴀʏᴍᴇɴᴛ ᴄᴏɴғɪʀᴍᴇᴅ!**\n\n`{credits} ᴄʀᴇᴅɪᴛs` ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ.".format(credits=dep.get("credits", 0))),
+                buttons=[[color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]]
             )
             user_states.pop(user_id, None)
         elif status == "pending":
             await event.answer("⏳ Still verifying… Please wait.", alert=True)
+            # Step 6: Fake nahi, real verification message
+            await event.edit(
+                fancy("⚠️ **ᴘᴀʏᴍᴇɴᴛ ɴᴏᴛ ᴅᴇᴛᴇᴄᴛᴇᴅ ʏᴇᴛ.**\n\nᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ᴀ ғᴇᴡ sᴇᴄᴏɴᴅs ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ."),
+                buttons=[
+                    [color_btn("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", "check_payment", "primary")],
+                    [color_btn("❌ ᴄᴀɴᴄᴇʟ", "cancel_payment", "danger")]
+                ]
+            )
         else:
             await event.answer(f"Status: {status}", alert=True)
 
@@ -1074,9 +1124,8 @@ async def callback_router(event):
         user_states[user_id] = {"state": "custom_deposit"}
         min_dep = await get_setting("min_deposit", 10.0)
         await event.edit(
-            fancy(f"💡 **ᴄᴜsᴛᴏᴍ ᴀᴍᴏᴜɴᴛ**\n\n"
-                  f"ᴇɴᴛᴇʀ ᴛʜᴇ ᴀᴍᴏᴜɴᴛ ɪɴ ₹ (ᴍɪɴɪᴍᴜᴍ {min_dep}):"),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"deposit")]]
+            fancy(f"💡 **ᴄᴜsᴛᴏᴍ ᴀᴍᴏᴜɴᴛ**\n\nᴇɴᴛᴇʀ ᴛʜᴇ ᴀᴍᴏᴜɴᴛ ɪɴ ₹ (ᴍɪɴɪᴍᴜᴍ {min_dep}):"),
+            buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "deposit", "default")]]
         )
 
     # ── PROFILE ──────────────────────────────────────────────────
@@ -1101,11 +1150,11 @@ async def callback_router(event):
                 f"🌐 ʟᴀɴɢᴜᴀɢᴇ: `{lang}`"
             ),
             buttons=[
-                [Button.inline("📋 ᴏʀᴅᴇʀs", b"orders"),
-                 Button.inline("📜 ʜɪsᴛᴏʀʏ", b"history")],
-                [Button.inline("👥 ʀᴇꜰᴇʀʀᴀʟ", b"referral"),
-                 Button.inline("🌐 ʟᴀɴɢᴜᴀɢᴇ", b"language")],
-                [Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]
+                [color_btn("📋 ᴏʀᴅᴇʀs", "orders", "primary"),
+                 color_btn("📜 ʜɪsᴛᴏʀʏ", "history", "primary")],
+                [color_btn("🎁 ʀᴇꜰᴇʀʀᴀʟ", "referral", "primary"),
+                 color_btn("🌐 ʟᴀɴɢᴜᴀɢᴇ", "language", "primary")],
+                [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]
             ]
         )
 
@@ -1114,12 +1163,11 @@ async def callback_router(event):
         langs = [
             ("🇬🇧 English", "en"), ("🇮🇳 हिन्दी", "hi"), ("🇷🇺 Русский", "ru"),
             ("🇹🇷 Türkçe", "tr"), ("🇮🇳 தமிழ்", "ta"), ("🇮🇳 മലയാളം", "ml"),
-            ("🇮🇳 ಕನ್ನಡ", "kn"), ("🇸🇦 العربية", "ar"), ("🇪🇸 Español", "es"),
         ]
         rows = []
         for label, code in langs:
-            rows.append([Button.inline(label, f"set_lang:{code}".encode())])
-        rows.append([Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")])
+            rows.append([color_btn(label, f"set_lang:{code}", "default")])
+        rows.append([color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")])
         await event.edit(
             fancy("🌐 **ʟᴀɴɢᴜᴀɢᴇ sᴇᴛᴛɪɴɢs**\n\nᴄʜᴏᴏsᴇ ʏᴏᴜʀ ᴘʀᴇғᴇʀʀᴇᴅ ʟᴀɴɢᴜᴀɢᴇ:"),
             buttons=rows
@@ -1152,135 +1200,75 @@ async def callback_router(event):
                 f"💰 ᴛᴏᴛᴀʟ ᴇᴀʀɴᴇᴅ: `₹{earnings:.2f}`"
             ),
             buttons=[
-                [Button.url(
-                    "📤 sʜᴀʀᴇ ʟɪɴᴋ",
-                    f"https://t.me/share/url?url={ref_link}"
-                    "&text=Buy+Telegram+accounts+instantly!",
-                )],
-                [Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")],
+                [Button.url("📤 sʜᴀʀᴇ ʟɪɴᴋ", f"https://t.me/share/url?url={ref_link}&text=Buy+Telegram+accounts+instantly!")],
+                [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")],
             ],
         )
 
     # ── HELP ─────────────────────────────────────────────────────
     elif data == "help":
         await event.edit(
-            fancy(
-                "❓ **ʜᴇʟᴘ ᴄᴇɴᴛᴇʀ**\n\n"
-                "ᴄʜᴏᴏsᴇ ᴀ ᴛᴏᴘɪᴄ ʙᴇʟᴏᴡ:"
-            ),
+            fancy("❓ **ʜᴇʟᴘ ᴄᴇɴᴛᴇʀ**\n\nᴄʜᴏᴏsᴇ ᴀ ᴛᴏᴘɪᴄ ʙᴇʟᴏᴡ:"),
             buttons=[
-                [Button.inline("📖 ʜᴏᴡ ᴛᴏ ᴜsᴇ", b"help_howto")],
-                [Button.inline("🔑 ᴏᴛᴘ ʜᴇʟᴘ", b"help_otp")],
-                [Button.inline("💳 ᴘᴀʏᴍᴇɴᴛ ʜᴇʟᴘ", b"help_payment")],
-                [Button.inline("🛡️ ᴡʜʏ ᴛʀᴜsᴛ ᴜs?", b"help_trust")],
-                [Button.inline("📚 ꜰᴜʟʟ ᴍᴀɴᴜᴀʟ", b"manual")],
-                [Button.inline("📢 ᴜᴘᴅᴀᴛᴇs", b"help_updates")],
-                [Button.inline("📞 ᴄᴏɴᴛᴀᴄᴛ sᴜᴘᴘᴏʀᴛ", b"support")],
-                [Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]
+                [color_btn("📖 ʜᴏᴡ ᴛᴏ ᴜsᴇ", "help_howto", "default")],
+                [color_btn("🔑 ᴏᴛᴘ ʜᴇʟᴘ", "help_otp", "default")],
+                [color_btn("💳 ᴘᴀʏᴍᴇɴᴛ ʜᴇʟᴘ", "help_payment", "default")],
+                [color_btn("🛡️ ᴡʜʏ ᴛʀᴜsᴛ ᴜs?", "help_trust", "default")],
+                [color_btn("📞 ᴄᴏɴᴛᴀᴄᴛ sᴜᴘᴘᴏʀᴛ", "support", "default")],
+                [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]
             ]
         )
 
     elif data == "help_howto":
         await event.edit(
-            fancy(
-                "📖 **ʜᴏᴡ ᴛᴏ ᴜsᴇ**\n\n"
-                "1️⃣ ᴀᴅᴅ ᴄʀᴇᴅɪᴛs ᴠɪᴀ ᴜᴘɪ/ᴜsᴅᴛ/sᴛᴀʀs.\n"
-                "2️⃣ ɢᴏ ᴛᴏ sᴛᴏʀᴇ → sᴇʟᴇᴄᴛ ᴄᴀᴛᴇɢᴏʀʏ.\n"
-                "3️⃣ ᴄʜᴏᴏsᴇ ᴀ ᴄᴏᴜɴᴛʀʏ → ᴛᴀᴘ ʙᴜʏ.\n"
-                "4️⃣ ʀᴇᴄᴇɪᴠᴇ ᴏᴛᴘ & 2ꜰᴀ ɪɴsᴛᴀɴᴛʟʏ.\n"
-                "5️⃣ ʀᴇ-ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ ᴡɪᴛʜɪɴ 24ʜ.\n\n"
-                "📌 ᴀʟʟ ᴛʀᴀɴsᴀᴄᴛɪᴏɴs ᴀʀᴇ ᴀᴜᴛᴏᴍᴀᴛᴇᴅ."
-            ),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
+            fancy("📖 **ʜᴏᴡ ᴛᴏ ᴜsᴇ**\n\n"
+                  "1️⃣ ᴀᴅᴅ ᴄʀᴇᴅɪᴛs ᴠɪᴀ ᴜᴘɪ/ᴜsᴅᴛ/sᴛᴀʀs.\n"
+                  "2️⃣ ɢᴏ ᴛᴏ sᴛᴏʀᴇ → sᴇʟᴇᴄᴛ ᴄᴀᴛᴇɢᴏʀʏ.\n"
+                  "3️⃣ ᴄʜᴏᴏsᴇ ᴀ ᴄᴏᴜɴᴛʀʏ → ᴛᴀᴘ ʙᴜʏ.\n"
+                  "4️⃣ ʀᴇᴄᴇɪᴠᴇ ᴏᴛᴘ & 2ꜰᴀ ɪɴsᴛᴀɴᴛʟʏ.\n"
+                  "5️⃣ ʀᴇ-ʀᴇǫᴜᴇsᴛ ᴏᴛᴘ ᴡɪᴛʜɪɴ 24ʜ."),
+            buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "help", "default")]]
         )
 
     elif data == "help_otp":
         await event.edit(
-            fancy(
-                "🔑 **ᴏᴛᴘ ᴛʀᴏᴜʙʟᴇsʜᴏᴏᴛɪɴɢ**\n\n"
-                "⚠️ ᴛʜᴇ ᴄᴏᴅᴇ ʜᴀs ɴᴏᴛ ᴀʀʀɪᴠᴇᴅ\n"
-                "→ ʀᴇǫᴜᴇsᴛ ɪᴛ ᴀɢᴀɪɴ. ᴄᴏᴅᴇs ᴜsᴜᴀʟʟʏ ᴀʀʀɪᴠᴇ ɪɴ <30s.\n\n"
-                "❓ ᴡʜᴇʀᴇ ɪs ᴛʜᴇ 2ꜰᴀ ᴘᴀssᴡᴏʀᴅ?\n"
-                "→ ᴄʜᴇᴄᴋ ʏᴏᴜʀ ᴏʀᴅᴇʀ ᴅᴇᴛᴀɪʟs.\n\n"
-                "❌ ᴛᴇʟᴇɢʀᴀᴍ sᴀʏs ᴛʜᴇ ᴄᴏᴅᴇ ɪs ᴡʀᴏɴɢ\n"
-                "→ ᴇɴᴛᴇʀ ᴛʜᴇ ᴄᴏᴅᴇ ᴄᴀʀᴇꜰᴜʟʟʏ ᴏʀ ᴜsᴇ 2ꜰᴀ.\n\n"
-                "⏳ ᴍʏ ᴡɪɴᴅᴏᴡ ʀᴀɴ ᴏᴜᴛ\n"
-                "→ ʀᴇ-ʀᴇǫᴜᴇsᴛ ғʀᴏᴍ ʜɪsᴛᴏʀʏ."
-            ),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
+            fancy("🔑 **ᴏᴛᴘ ᴛʀᴏᴜʙʟᴇsʜᴏᴏᴛɪɴɢ**\n\n"
+                  "⚠️ ᴄᴏᴅᴇ ɴᴏᴛ ᴀʀʀɪᴠᴇᴅ?\n→ ʀᴇǫᴜᴇsᴛ ᴀɢᴀɪɴ.\n\n"
+                  "❓ ᴡʜᴇʀᴇ ɪs 2ꜰᴀ?\n→ ᴄʜᴇᴄᴋ ᴏʀᴅᴇʀ ᴅᴇᴛᴀɪʟs."),
+            buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "help", "default")]]
         )
 
     elif data == "help_payment":
         await event.edit(
-            fancy(
-                "💳 **ᴘᴀʏᴍᴇɴᴛ ʜᴇʟᴘ**\n\n"
-                "| ᴍᴇᴛʜᴏᴅ | ᴛɪᴍᴇ |\n"
-                "| ᴜᴘɪ / Qʀ | ɪɴsᴛᴀɴᴛ (1–2 ᴍɪɴ) |\n"
-                "| ᴜsᴅᴛ (BSC) | 1–3 ʙʟᴏᴄᴋ ᴄᴏɴғɪʀᴍs |\n"
-                "| ᴛᴇʟᴇɢʀᴀᴍ sᴛᴀʀs | ɪɴsᴛᴀɴᴛ |\n\n"
-                "✔ ᴘᴀɪᴅ ʙᴜᴛ ᴄʀᴇᴅɪᴛs ɴᴏᴛ ᴀᴅᴅᴇᴅ?\n"
-                "→ ᴛᴀᴘ 'ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ' ᴏʀ ᴄᴏɴᴛᴀᴄᴛ sᴜᴘᴘᴏʀᴛ."
-            ),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
+            fancy("💳 **ᴘᴀʏᴍᴇɴᴛ ʜᴇʟᴘ**\n\n"
+                  "| ᴍᴇᴛʜᴏᴅ | ᴛɪᴍᴇ |\n"
+                  "| ᴜᴘɪ / Qʀ | ɪɴsᴛᴀɴᴛ (1–2 ᴍɪɴ) |\n"
+                  "| ᴜsᴅᴛ (BSC) | 1–3 ʙʟᴏᴄᴋ ᴄᴏɴғɪʀᴍs |\n"
+                  "| ᴛᴇʟᴇɢʀᴀᴍ sᴛᴀʀs | ɪɴsᴛᴀɴᴛ |\n\n"
+                  "✔ ᴘᴀɪᴅ ʙᴜᴛ ᴄʀᴇᴅɪᴛs ɴᴏᴛ ᴀᴅᴅᴇᴅ?\n→ ᴛᴀᴘ 'ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ'."),
+            buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "help", "default")]]
         )
 
     elif data == "help_trust":
         await event.edit(
-            fancy(
-                "🛡️ **ᴡʜʏ ᴛʀᴜsᴛ ᴏᴛᴘ ʙᴏᴛ?**\n\n"
-                "🔹 100% ᴀᴜᴛᴏᴍᴀᴛᴇᴅ – ɴᴏ ʜᴜᴍᴀɴ ɪɴᴛᴇʀᴠᴇɴᴛɪᴏɴ\n"
-                "🔹 ɪɴsᴛᴀɴᴛ ᴏᴛᴘ ғᴏʀᴡᴀʀᴅɪɴɢ\n"
-                "🔹 100% ʀᴇꜰᴜɴᴅ ɪғ ɴᴏᴛ ᴅᴇʟɪᴠᴇʀᴇᴅ\n"
-                "🔹 ɴᴏ ʜᴜᴍᴀɴ ᴇᴠᴇʀ sᴇᴇs sᴇssɪᴏɴ ᴅᴀᴛᴀ\n"
-                "🔹 ᴀᴜᴛᴏᴍᴀᴛᴇᴅ ᴇᴍᴀɪʟ & 2ꜰᴀ ʀᴏᴛᴀᴛɪᴏɴ\n\n"
-                "📌 ᴏɴʟʏ ᴡʜᴀᴛsᴀᴘᴘ ᴏʀᴅᴇʀs ᴀʀᴇ ᴍᴀɴᴜᴀʟ."
-            ),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
-        )
-
-    elif data == "help_updates":
-        await event.edit(
-            fancy("📢 **ᴜᴘᴅᴀᴛᴇs**\n\nᴍᴏʀᴇ ʙᴏᴛs ᴀɴᴅ ғᴇᴀᴛᴜʀᴇs ᴄᴏᴍɪɴɢ sᴏᴏɴ!"),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
-        )
-
-    elif data == "manual":
-        await event.edit(
-            fancy(
-                "📚 **ꜰᴜʟʟ ᴍᴀɴᴜᴀʟ**\n\n"
-                "1. **ʙᴜʏɪɴɢ ᴀᴄᴄᴏᴜɴᴛs** (100% ᴀᴜᴛᴏᴍᴀᴛᴇᴅ)\n"
-                "   ᴀᴅᴅ ᴄʀᴇᴅɪᴛs → sᴛᴏʀᴇ → ᴄᴀᴛᴇɢᴏʀʏ → ᴄᴏᴜɴᴛʀʏ → ʙᴜʏ\n"
-                "   → ɢᴇᴛ ᴏᴛᴘ & 2ꜰᴀ\n\n"
-                "2. **ᴡʜᴀᴛsᴀᴘᴘ ɴᴜᴍʙᴇʀs** (ᴏᴘᴇʀᴀᴛᴏʀ ᴅᴇʟɪᴠᴇʀʏ)\n\n"
-                "3. **ᴘᴀʏᴍᴇɴᴛs & ᴛᴏᴘ-ᴜᴘs**\n"
-                "   ᴜᴘɪ/ǫʀ, ᴜsᴅᴛ, ᴛᴇʟᴇɢʀᴀᴍ sᴛᴀʀs\n\n"
-                "4. **ʀᴇꜰᴇʀ & ᴇᴀʀɴ**\n"
-                "   sʜᴀʀᴇ ʟɪɴᴋ → ɢᴇᴛ ʙᴏɴᴜs ᴏɴ ᴊᴏɪɴ & ᴅᴇᴘᴏsɪᴛ\n\n"
-                "5. **sᴇᴄᴜʀɪᴛʏ & ʀᴇꜰᴜɴᴅ ɢᴜᴀʀᴀɴᴛᴇᴇs**\n"
-                "   100% ᴀᴜᴛᴏᴍᴀᴛᴇᴅ, ʀᴇꜰᴜɴᴅ ɪғ ᴜɴᴅᴇʟɪᴠᴇʀᴇᴅ"
-            ),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
+            fancy("🛡️ **ᴡʜʏ ᴛʀᴜsᴛ ᴏᴛᴘ ʙᴏᴛ?**\n\n🔹 100% ᴀᴜᴛᴏᴍᴀᴛᴇᴅ\n🔹 ɪɴsᴛᴀɴᴛ ᴏᴛᴘ ғᴏʀᴡᴀʀᴅɪɴɢ\n🔹 ɴᴏ ʜᴜᴍᴀɴ sᴇᴇs sᴇssɪᴏɴ ᴅᴀᴛᴀ"),
+            buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "help", "default")]]
         )
 
     elif data == "support":
         support_link = await get_setting("support_link")
         if support_link:
-            await event.edit(
-                fancy("📞 **ᴄᴏɴᴛᴀᴄᴛ sᴜᴘᴘᴏʀᴛ**\n\nᴛᴀᴘ ʙᴇʟᴏᴡ ᴛᴏ ᴄʜᴀᴛ."),
-                buttons=[[Button.url("📞 sᴜᴘᴘᴏʀᴛ", support_link)],
-                         [Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
-            )
+            await event.edit(fancy("📞 **ᴄᴏɴᴛᴀᴄᴛ sᴜᴘᴘᴏʀᴛ**\n\nᴛᴀᴘ ʙᴇʟᴏᴡ ᴛᴏ ᴄʜᴀᴛ."),
+                buttons=[[Button.url("📞 sᴜᴘᴘᴏʀᴛ", support_link)], [color_btn("◀️ ʙᴀᴄᴋ", "help", "default")]])
         else:
-            await event.edit(
-                fancy("📞 **sᴜᴘᴘᴏʀᴛ**\n\nɴᴏ sᴜᴘᴘᴏʀᴛ ʟɪɴᴋ ᴄᴏɴғɪɢᴜʀᴇᴅ."),
-                buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"help")]]
-            )
+            await event.edit(fancy("📞 **sᴜᴘᴘᴏʀᴛ**\n\nɴᴏ sᴜᴘᴘᴏʀᴛ ʟɪɴᴋ ᴄᴏɴғɪɢᴜʀᴇᴅ."),
+                buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "help", "default")]])
 
     # ── WHATSAPP ──────────────────────────────────────────────────
     elif data == "whatsapp":
         await event.edit(
             fancy("💬 **ᴡʜᴀᴛsᴀᴘᴘ**\n\nᴄᴏɴᴛᴀᴄᴛ ᴏᴜʀ ᴡʜᴀᴛsᴀᴘᴘ sᴜᴘᴘᴏʀᴛ ғᴏʀ ᴀssɪsᴛᴀɴᴄᴇ."),
-            buttons=[[Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]]
+            buttons=[[color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]]
         )
 
     # ════════════════════════════════════════════
@@ -1326,10 +1314,9 @@ async def callback_router(event):
                 f"💳 ᴘᴇɴᴅɪɴɢ ᴅᴇᴘᴏsɪᴛs: `{pending_deps}`\n"
                 f"💰 ᴛᴏᴛᴀʟ ʀᴇᴠᴇɴᴜᴇ: `₹{revenue:.2f}`"
             ),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"admin")]],
+            buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")]],
         )
 
-    # ── UPLOAD SESSIONS ─────────────────────────────────────────
     elif data == "upload_sessions":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
@@ -1337,11 +1324,8 @@ async def callback_router(event):
         cats = await get_categories()
         rows = []
         for cat in cats:
-            rows.append([Button.inline(
-                f"{cat['icon']} {cat['name']}",
-                f"upload_cat:{cat['name']}".encode()
-            )])
-        rows.append([Button.inline("◀️ ʙᴀᴄᴋ", b"admin")])
+            rows.append([color_btn(f"{cat['icon']} {cat['name']}", f"upload_cat:{cat['name']}", "default")])
+        rows.append([color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")])
         await event.edit(fancy("📦 **ᴜᴘʟᴏᴀᴅ sᴇssɪᴏɴs**\n\nsᴇʟᴇᴄᴛ ᴄᴀᴛᴇɢᴏʀʏ:"), buttons=rows)
 
     elif data.startswith("upload_cat:"):
@@ -1349,11 +1333,8 @@ async def callback_router(event):
         c_list = await countries_col.find({"is_active": True}).to_list(50)
         rows = []
         for c in c_list:
-            rows.append([Button.inline(
-                f"{c['flag']} {c['name']}",
-                f"upload_country:{c['code']}:{cat_name}".encode()
-            )])
-        rows.append([Button.inline("◀️ ʙᴀᴄᴋ", b"admin")])
+            rows.append([color_btn(f"{c['flag']} {c['name']}", f"upload_country:{c['code']}:{cat_name}", "default")])
+        rows.append([color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")])
         await event.edit(fancy(f"📦 **ᴜᴘʟᴏᴀᴅ ᴛᴏ {cat_name}**\n\nsᴇʟᴇᴄᴛ ᴄᴏᴜɴᴛʀʏ:"), buttons=rows)
 
     elif data.startswith("upload_country:"):
@@ -1374,7 +1355,6 @@ async def callback_router(event):
             "category": cat_name,
             "twofa_password": "",
         }
-        # Show default 2FA hint
         default_2fa = await get_setting("default_2fa", "")
         hint = f"\n\n💡 ᴅᴇꜰᴀᴜʟᴛ 2ꜰᴀ: `{default_2fa}`" if default_2fa else ""
         await event.edit(
@@ -1384,10 +1364,9 @@ async def callback_router(event):
                 f"ɪғ ɴᴏᴛ sᴇɴᴛ, ᴅᴇꜰᴀᴜʟᴛ 2ꜰᴀ ᴡɪʟʟ ʙᴇ ᴜsᴇᴅ.{hint}\n"
                 "sᴛᴇᴘ 2: sᴇɴᴅ ᴛʜᴇ **.ᴢɪᴘ** ᴏʀ **.sᴇssɪᴏɴ** ꜰɪʟᴇ."
             ),
-            buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"admin")]],
+            buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "admin", "danger")]],
         )
 
-    # ── MANAGE SESSIONS ──────────────────────────────────────────
     elif data == "manage_sessions":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
@@ -1414,21 +1393,17 @@ async def callback_router(event):
                 f"🔓 ʟᴏɢɢᴇᴅ ᴏᴜᴛ: `{logout_}`\n\n"
                 f"**ᴀᴠᴀɪʟᴀʙʟᴇ ʙʏ ᴄᴏᴜɴᴛʀʏ:**\n{by_country}"
             ),
-            buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"admin")]],
+            buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")]],
         )
 
-    # ── PENDING DEPOSITS ──────────────────────────────────────────
     elif data == "pending_deposits":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
             return
-        deps = await deposits_col.find(
-            {"status": "pending"}).sort("created_at", 1).limit(10).to_list(10)
+        deps = await deposits_col.find({"status": "pending"}).sort("created_at", 1).limit(10).to_list(10)
         if not deps:
-            await event.edit(
-                fancy("✅ ɴᴏ ᴘᴇɴᴅɪɴɢ ᴅᴇᴘᴏsɪᴛs."),
-                buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"admin")]],
-            )
+            await event.edit(fancy("✅ ɴᴏ ᴘᴇɴᴅɪɴɢ ᴅᴇᴘᴏsɪᴛs."),
+                buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")]])
             return
         await event.answer()
         for dep in deps:
@@ -1439,25 +1414,13 @@ async def callback_router(event):
             created = dep["created_at"].strftime("%d %b %H:%M")
             await bot.send_message(
                 user_id,
-                fancy(
-                    f"💳 **ᴅᴇᴘᴏsɪᴛ ʀᴇǫᴜᴇsᴛ**\n"
-                    f"ᴜsᴇʀ ɪᴅ: `{uid}`\n"
-                    f"ᴀᴍᴏᴜɴᴛ: `₹{amount:.2f}`\n"
-                    f"ᴛɪᴍᴇ: {created}"
-                ),
+                fancy(f"💳 **ᴅᴇᴘᴏsɪᴛ ʀᴇǫᴜᴇsᴛ**\n• ᴜsᴇʀ ɪᴅ: `{uid}`\n• ᴀᴍᴏᴜɴᴛ: `₹{amount:.2f}`\n• ᴛɪᴍᴇ: {created}"),
                 buttons=[
-                    [Button.inline(
-                        "✅ ᴀᴘᴘʀᴏᴠᴇ",
-                        f"dep_approve:{dep_id}:{uid}:{amount}".encode(),
-                    ),
-                    Button.inline(
-                        "❌ ʀᴇᴊᴇᴄᴛ",
-                        f"dep_reject:{dep_id}:{uid}".encode(),
-                    )],
+                    [color_btn("✅ ᴀᴘᴘʀᴏᴠᴇ", f"dep_approve:{dep_id}:{uid}:{amount}", "success"),
+                     color_btn("❌ ʀᴇᴊᴇᴄᴛ", f"dep_reject:{dep_id}:{uid}", "danger")],
                 ],
             )
 
-    # ── DEPOSIT APPROVE/REJECT ──────────────────────────────────
     elif data.startswith("dep_approve:"):
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
@@ -1469,15 +1432,10 @@ async def callback_router(event):
 
         claim = await deposits_col.update_one(
             {"_id": ObjectId(dep_id), "status": "pending"},
-            {"$set": {
-                "status":      "approved",
-                "approved_at": datetime.utcnow(),
-                "approved_by": user_id,
-            }},
+            {"$set": {"status": "approved", "approved_at": datetime.utcnow(), "approved_by": user_id}},
         )
         if claim.matched_count == 0:
             await event.answer("⚠️ Already processed.", alert=True)
-            await event.edit("⏭️ ᴛʜɪs ᴅᴇᴘᴏsɪᴛ ᴡᴀs ᴀʟʀᴇᴀᴅʏ ᴘʀᴏᴄᴇssᴇᴅ.")
             return
 
         dep_doc = await deposits_col.find_one({"_id": ObjectId(dep_id)})
@@ -1493,8 +1451,7 @@ async def callback_router(event):
             if bonus > 0:
                 await users_col.update_one(
                     {"user_id": buyer["referred_by"]},
-                    {"$inc": {"balance": bonus, "referral_earnings": bonus,
-                              "withdrawable": bonus}},
+                    {"$inc": {"balance": bonus, "referral_earnings": bonus, "withdrawable": bonus}},
                 )
                 try:
                     await bot.send_message(
@@ -1506,10 +1463,7 @@ async def callback_router(event):
 
         await users_col.update_one({"user_id": uid}, {"$inc": {"balance": amount, "withdrawable": amount}})
         try:
-            await bot.send_message(
-                uid,
-                fancy(f"✅ **ᴅᴇᴘᴏsɪᴛ ᴀᴘᴘʀᴏᴠᴇᴅ!**\n`₹{amount:.2f}` ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ."),
-            )
+            await bot.send_message(uid, fancy(f"✅ **ᴅᴇᴘᴏsɪᴛ ᴀᴘᴘʀᴏᴠᴇᴅ!**\n`₹{amount:.2f}` ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ."))
         except Exception:
             pass
         await event.edit(f"✅ ᴀᴘᴘʀᴏᴠᴇᴅ ₹{amount:.2f} ғᴏʀ ᴜsᴇʀ `{uid}`.")
@@ -1523,39 +1477,27 @@ async def callback_router(event):
         uid = int(uid_str)
         dep_doc = await deposits_col.find_one_and_update(
             {"_id": ObjectId(dep_id), "status": "pending"},
-            {"$set": {
-                "status":      "rejected",
-                "rejected_at": datetime.utcnow(),
-                "rejected_by": user_id,
-            }},
+            {"$set": {"status": "rejected", "rejected_at": datetime.utcnow(), "rejected_by": user_id}},
             return_document=True,
         )
         if dep_doc is None:
             await event.answer("⚠️ Already processed.", alert=True)
-            await event.edit("⏭️ ᴛʜɪs ᴅᴇᴘᴏsɪᴛ ᴡᴀs ᴀʟʀᴇᴀᴅʏ ᴘʀᴏᴄᴇssᴇᴅ.")
             return
         uid = int(dep_doc.get("user_id", uid))
         try:
-            await bot.send_message(
-                uid,
-                fancy("❌ **ᴅᴇᴘᴏsɪᴛ ʀᴇᴊᴇᴄᴛᴇᴅ.**\nᴄᴏɴᴛᴀᴄᴛ sᴜᴘᴘᴏʀᴛ."),
-            )
+            await bot.send_message(uid, fancy("❌ **ᴅᴇᴘᴏsɪᴛ ʀᴇᴊᴇᴄᴛᴇᴅ.**\nᴄᴏɴᴛᴀᴄᴛ sᴜᴘᴘᴏʀᴛ."))
         except Exception:
             pass
         await event.edit(f"❌ ʀᴇᴊᴇᴄᴛᴇᴅ ᴅᴇᴘᴏsɪᴛ ғᴏʀ ᴜsᴇʀ `{uid}`.")
 
-    # ── BROADCAST ────────────────────────────────────────────────
     elif data == "broadcast":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
             return
         user_states[user_id] = {"state": "broadcast"}
-        await event.edit(
-            fancy("📢 **ʙʀᴏᴀᴅᴄᴀsᴛ**\n\nsᴇɴᴅ ᴛʜᴇ ᴍᴇssᴀɢᴇ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ᴀʟʟ ᴜsᴇʀs."),
-            buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"admin")]],
-        )
+        await event.edit(fancy("📢 **ʙʀᴏᴀᴅᴄᴀsᴛ**\n\nsᴇɴᴅ ᴛʜᴇ ᴍᴇssᴀɢᴇ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ᴀʟʟ ᴜsᴇʀs."),
+            buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "admin", "danger")]])
 
-    # ── SETTINGS ──────────────────────────────────────────────────
     elif data == "asettings":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
@@ -1575,33 +1517,28 @@ async def callback_router(event):
         await event.edit(
             fancy(
                 f"⚙️ **sᴇᴛᴛɪɴɢs**\n\n"
-                f"🤖 ʙᴏᴛ ɴᴀᴍᴇ: `{bn}`\n"
-                f"💳 ᴜᴘɪ ɪᴅ: `{upi}`\n"
-                f"👤 ᴜᴘɪ ɴᴀᴍᴇ: `{uname_}`\n"
-                f"📞 sᴜᴘᴘᴏʀᴛ ʟɪɴᴋ: `{sup}`\n"
-                f"🎁 ʀᴇꜰ ʙᴏɴᴜs: `₹{rb}`\n"
-                f"📈 ʀᴇꜰ %: `{rp}%`\n"
-                f"🔢 ᴍɪɴ ᴅᴇᴘᴏsɪᴛ: `₹{md}`\n"
-                f"💬 ᴡʜᴀᴛsᴀᴘᴘ: {wa}\n"
-                f"🖼️ ᴡᴇʟᴄᴏᴍᴇ ᴘʜᴏᴛᴏ: {photo}\n"
-                f"⏳ ᴀᴜᴛᴏ ᴠᴇʀɪғʏ ᴅᴇʟᴀʏ: `{delay}s`\n"
-                f"🌐 ᴘᴀʏᴍᴇɴᴛ ᴡᴇʙʜᴏᴏᴋ: `{webhook}`\n"
-                f"🔐 ᴅᴇꜰᴀᴜʟᴛ 2ꜰᴀ: `{default2fa or 'ɴᴏɴᴇ'}`"
+                f"• ʙᴏᴛ ɴᴀᴍᴇ: `{bn}`\n"
+                f"• ᴜᴘɪ ɪᴅ: `{upi}`\n"
+                f"• ᴜᴘɪ ɴᴀᴍᴇ: `{uname_}`\n"
+                f"• sᴜᴘᴘᴏʀᴛ: `{sup}`\n"
+                f"• ʀᴇꜰ ʙᴏɴᴜs: `₹{rb}`\n"
+                f"• ʀᴇꜰ %: `{rp}%`\n"
+                f"• ᴍɪɴ ᴅᴇᴘᴏsɪᴛ: `₹{md}`\n"
+                f"• ᴡʜᴀᴛsᴀᴘᴘ: {wa}\n"
+                f"• ᴡᴇʟᴄᴏᴍᴇ ᴘʜᴏᴛᴏ: {photo}\n"
+                f"• ᴀᴜᴛᴏ ᴠᴇʀɪғʏ: `{delay}s`\n"
+                f"• ᴡᴇʙʜᴏᴏᴋ: `{webhook}`\n"
+                f"• ᴅᴇꜰᴀᴜʟᴛ 2ꜰᴀ: `{default2fa or 'ɴᴏɴᴇ'}`"
             ),
             buttons=[
-                [Button.inline("🤖 ʙᴏᴛ ɴᴀᴍᴇ", b"set_botname"),
-                 Button.inline("💳 ᴜᴘɪ ɪᴅ", b"set_upi")],
-                [Button.inline("👤 ᴜᴘɪ ɴᴀᴍᴇ", b"set_upiname"),
-                 Button.inline("📞 sᴜᴘᴘᴏʀᴛ", b"set_support")],
-                [Button.inline("🎁 ʀᴇꜰ ʙᴏɴᴜs", b"set_ref_bonus"),
-                 Button.inline("📈 ʀᴇꜰ %", b"set_ref_pct")],
-                [Button.inline("🔢 ᴍɪɴ ᴅᴇᴘᴏsɪᴛ", b"set_min_dep")],
-                [Button.inline("💬 ᴛᴏɢɢʟᴇ ᴡʜᴀᴛsᴀᴘᴘ", b"toggle_whatsapp"),
-                 Button.inline("🖼️ sᴇᴛ ᴡᴇʟᴄᴏᴍᴇ ᴘʜᴏᴛᴏ", b"set_welcome_photo")],
-                [Button.inline("⏳ ᴀᴜᴛᴏ ᴠᴇʀɪғʏ ᴅᴇʟᴀʏ", b"set_verify_delay"),
-                 Button.inline("🌐 ᴘᴀʏᴍᴇɴᴛ ᴡᴇʙʜᴏᴏᴋ", b"set_webhook")],
-                [Button.inline("🔐 ᴅᴇꜰᴀᴜʟᴛ 2ꜰᴀ", b"set_default_2fa")],
-                [Button.inline("◀️ ʙᴀᴄᴋ", b"admin")],
+                [color_btn("🤖 ʙᴏᴛ ɴᴀᴍᴇ", "set_botname", "primary"), color_btn("💳 ᴜᴘɪ ɪᴅ", "set_upi", "primary")],
+                [color_btn("👤 ᴜᴘɪ ɴᴀᴍᴇ", "set_upiname", "primary"), color_btn("📞 sᴜᴘᴘᴏʀᴛ", "set_support", "primary")],
+                [color_btn("🎁 ʀᴇꜰ ʙᴏɴᴜs", "set_ref_bonus", "primary"), color_btn("📈 ʀᴇꜰ %", "set_ref_pct", "primary")],
+                [color_btn("🔢 ᴍɪɴ ᴅᴇᴘᴏsɪᴛ", "set_min_dep", "primary")],
+                [color_btn("💬 ᴛᴏɢɢʟᴇ ᴡʜᴀᴛsᴀᴘᴘ", "toggle_whatsapp", "primary"), color_btn("🖼️ sᴇᴛ ᴡᴇʟᴄᴏᴍᴇ ᴘʜᴏᴛᴏ", "set_welcome_photo", "primary")],
+                [color_btn("⏳ ᴀᴜᴛᴏ ᴠᴇʀɪғʏ ᴅᴇʟᴀʏ", "set_verify_delay", "primary"), color_btn("🌐 ᴘᴀʏᴍᴇɴᴛ ᴡᴇʙʜᴏᴏᴋ", "set_webhook", "primary")],
+                [color_btn("🔐 ᴅᴇꜰᴀᴜʟᴛ 2ꜰᴀ", "set_default_2fa", "primary")],
+                [color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")],
             ],
         )
 
@@ -1634,16 +1571,15 @@ async def callback_router(event):
             await set_setting("whatsapp_enabled", not current)
             await event.answer(f"✅ WhatsApp {'enabled' if not current else 'disabled'}")
             await event.edit(fancy("💬 **ᴡʜᴀᴛsᴀᴘᴘ** ᴛᴏɢɢʟᴇᴅ."),
-                             buttons=[[Button.inline("◀️ ʙᴀᴄᴋ", b"asettings")]])
+                             buttons=[[color_btn("◀️ ʙᴀᴄᴋ", "asettings", "default")]])
             return
         elif data == "set_welcome_photo":
             user_states[user_id] = {"state": "welcome_photo_set"}
-            await event.edit(prompt, buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"asettings")]])
+            await event.edit(prompt, buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "asettings", "danger")]])
             return
         user_states[user_id] = {"state": sk}
-        await event.edit(fancy(prompt), buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"asettings")]])
+        await event.edit(fancy(prompt), buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "asettings", "danger")]])
 
-    # ── COUNTRIES ──────────────────────────────────────────────────
     elif data == "acountries":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
@@ -1652,12 +1588,9 @@ async def callback_router(event):
         rows   = []
         for c in c_list:
             em = "✅" if c.get("is_active") else "❌"
-            rows.append([Button.inline(
-                f"{em} {c['flag']} {c['name']} — ₹{c['price']:.0f}",
-                f"ctoggle:{c['code']}".encode(),
-            )])
-        rows.append([Button.inline("➕ ᴀᴅᴅ ᴄᴏᴜɴᴛʀʏ", b"add_country"),
-                     Button.inline("◀️ ʙᴀᴄᴋ", b"admin")])
+            rows.append([color_btn(f"{em} {c['flag']} {c['name']} — {c['price']} ᴄʀ", f"ctoggle:{c['code']}", "default")])
+        rows.append([color_btn("➕ ᴀᴅᴅ ᴄᴏᴜɴᴛʀʏ", "add_country", "primary"),
+                     color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")])
         await event.edit(fancy("🌍 **ᴄᴏᴜɴᴛʀɪᴇs** (ᴛᴀᴘ ᴛᴏ ᴛᴏɢɢʟᴇ):"), buttons=rows)
 
     elif data.startswith("ctoggle:"):
@@ -1678,10 +1611,9 @@ async def callback_router(event):
         user_states[user_id] = {"state": "add_country"}
         await event.edit(
             fancy("🌍 **ᴀᴅᴅ ᴄᴏᴜɴᴛʀʏ**\n\nsᴇɴᴅ:\n`CODE | Name | Flag | Price`\nᴇxᴀᴍᴘʟᴇ: `TR | Turkey | 🇹🇷 | 28`"),
-            buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"acountries")]],
+            buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "acountries", "danger")]],
         )
 
-    # ── USERS ────────────────────────────────────────────────────
     elif data == "ausers":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
@@ -1690,9 +1622,9 @@ async def callback_router(event):
         await event.edit(
             fancy("👤 **ᴜsᴇʀ ʟᴏᴏᴋᴜᴘ**\n\nsᴇɴᴅ ᴛʜᴇ ᴛᴇʟᴇɢʀᴀᴍ ᴜsᴇʀ ɪᴅ:"),
             buttons=[
-                [Button.inline("➕ ᴀᴅᴅ ʙᴀʟᴀɴᴄᴇ", b"admin_add_bal"),
-                 Button.inline("🚫 ʙᴀɴ/ᴜɴʙᴀɴ", b"admin_ban")],
-                [Button.inline("◀️ ʙᴀᴄᴋ", b"admin")],
+                [color_btn("➕ ᴀᴅᴅ ʙᴀʟᴀɴᴄᴇ", "admin_add_bal", "primary"),
+                 color_btn("🚫 ʙᴀɴ/ᴜɴʙᴀɴ", "admin_ban", "primary")],
+                [color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")],
             ],
         )
 
@@ -1701,22 +1633,17 @@ async def callback_router(event):
             await event.answer("❌ Access denied.", alert=True)
             return
         user_states[user_id] = {"state": "add_bal_uid"}
-        await event.edit(
-            fancy("💰 **ᴀᴅᴅ ʙᴀʟᴀɴᴄᴇ**\n\nsᴇɴᴅ ᴜsᴇʀ ɪᴅ:"),
-            buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"admin")]],
-        )
+        await event.edit(fancy("💰 **ᴀᴅᴅ ʙᴀʟᴀɴᴄᴇ**\n\nsᴇɴᴅ ᴜsᴇʀ ɪᴅ:"),
+            buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "admin", "danger")]])
 
     elif data == "admin_ban":
         if not await is_admin(user_id):
             await event.answer("❌ Access denied.", alert=True)
             return
         user_states[user_id] = {"state": "ban_uid"}
-        await event.edit(
-            fancy("🚫 **ʙᴀɴ/ᴜɴʙᴀɴ**\n\nsᴇɴᴅ ᴜsᴇʀ ɪᴅ:"),
-            buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"admin")]],
-        )
+        await event.edit(fancy("🚫 **ʙᴀɴ/ᴜɴʙᴀɴ**\n\nsᴇɴᴅ ᴜsᴇʀ ɪᴅ:"),
+            buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "admin", "danger")]])
 
-    # ── MANAGE ADMINS ────────────────────────────────────────────
     elif data == "manage_admins":
         if user_id != OWNER_ID:
             await event.answer("❌ Owner only!", alert=True)
@@ -1724,67 +1651,48 @@ async def callback_router(event):
         admins = await bot_admins_col.find({"is_active": True}).to_list(50)
         rows   = []
         for a in admins:
-            rows.append([Button.inline(
-                f"🔴 ʀᴇᴍᴏᴠᴇ {a.get('name', a['telegram_id'])}",
-                f"rm_admin:{a['telegram_id']}".encode(),
-            )])
-        rows.append([Button.inline("➕ ᴀᴅᴅ ᴀᴅᴍɪɴ", b"add_admin"),
-                     Button.inline("◀️ ʙᴀᴄᴋ", b"admin")])
-        await event.edit(
-            fancy(f"🔑 **ᴍᴀɴᴀɢᴇ ᴀᴅᴍɪɴs**\n\nᴏᴡɴᴇʀ: `{OWNER_ID}`\nᴇxᴛʀᴀ ᴀᴅᴍɪɴs: {len(admins)}"),
-            buttons=rows,
-        )
+            rows.append([color_btn(f"🔴 ʀᴇᴍᴏᴠᴇ {a.get('name', a['telegram_id'])}", f"rm_admin:{a['telegram_id']}", "danger")])
+        rows.append([color_btn("➕ ᴀᴅᴅ ᴀᴅᴍɪɴ", "add_admin", "primary"),
+                     color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")])
+        await event.edit(fancy(f"🔑 **ᴍᴀɴᴀɢᴇ ᴀᴅᴍɪɴs**\n\nᴏᴡɴᴇʀ: `{OWNER_ID}`\nᴇxᴛʀᴀ ᴀᴅᴍɪɴs: {len(admins)}"), buttons=rows)
 
     elif data == "add_admin":
         if user_id != OWNER_ID:
             await event.answer("❌ Owner only!", alert=True)
             return
         user_states[user_id] = {"state": "add_admin"}
-        await event.edit(
-            fancy("🔑 **ᴀᴅᴅ ᴀᴅᴍɪɴ**\n\nsᴇɴᴅ ᴛᴇʟᴇɢʀᴀᴍ ᴜsᴇʀ ɪᴅ:"),
-            buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"manage_admins")]],
-        )
+        await event.edit(fancy("🔑 **ᴀᴅᴅ ᴀᴅᴍɪɴ**\n\nsᴇɴᴅ ᴛᴇʟᴇɢʀᴀᴍ ᴜsᴇʀ ɪᴅ:"),
+            buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "manage_admins", "danger")]])
 
     elif data.startswith("rm_admin:"):
         if user_id != OWNER_ID:
             await event.answer("❌ Owner only!", alert=True)
             return
         rm_id = int(data.split(":")[1])
-        await bot_admins_col.update_one(
-            {"telegram_id": rm_id}, {"$set": {"is_active": False}}
-        )
+        await bot_admins_col.update_one({"telegram_id": rm_id}, {"$set": {"is_active": False}})
         await event.answer(f"Removed admin {rm_id}")
         try:
             await bot.send_message(rm_id, "🔑 Your admin access has been removed.")
         except Exception:
             pass
         admins = await bot_admins_col.find({"is_active": True}).to_list(50)
-        rows   = [[Button.inline(
-            f"🔴 ʀᴇᴍᴏᴠᴇ {a.get('name', a['telegram_id'])}",
-            f"rm_admin:{a['telegram_id']}".encode(),
-        )] for a in admins]
-        rows.append([Button.inline("➕ ᴀᴅᴅ ᴀᴅᴍɪɴ", b"add_admin"),
-                     Button.inline("◀️ ʙᴀᴄᴋ", b"admin")])
+        rows   = [[color_btn(f"🔴 ʀᴇᴍᴏᴠᴇ {a.get('name', a['telegram_id'])}", f"rm_admin:{a['telegram_id']}", "danger")] for a in admins]
+        rows.append([color_btn("➕ ᴀᴅᴅ ᴀᴅᴍɪɴ", "add_admin", "primary"),
+                     color_btn("◀️ ʙᴀᴄᴋ", "admin", "default")])
         await event.edit(fancy("🔑 **ᴍᴀɴᴀɢᴇ ᴀᴅᴍɪɴs**:"), buttons=rows)
 
-    # ── LEGACY BALANCE ────────────────────────────────────────────
     elif data == "balance":
         if not user:
             user = await get_or_create_user(user_id)
         bal   = float(user.get("balance", 0))
         spent = 0.0
-        async for o in orders_col.find(
-                {"user_id": user_id, "status": {"$nin": ["cancelled"]}}):
+        async for o in orders_col.find({"user_id": user_id, "status": {"$nin": ["cancelled"]}}):
             spent += float(o.get("amount", 0))
         await event.edit(
-            fancy(
-                f"💰 **ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ**\n\n"
-                f"ᴀᴠᴀɪʟᴀʙʟᴇ: `₹{bal:.2f}`\n"
-                f"ᴛᴏᴛᴀʟ sᴘᴇɴᴛ: `₹{spent:.2f}`"
-            ),
+            fancy(f"💰 **ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ**\n\nᴀᴠᴀɪʟᴀʙʟᴇ: `{bal:.2f} ᴄʀ`\nᴛᴏᴛᴀʟ sᴘᴇɴᴛ: `{spent:.2f} ᴄʀ`"),
             buttons=[
-                [Button.inline("💳 ᴀᴅᴅ ᴄʀᴇᴅɪᴛs", b"deposit")],
-                [Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")],
+                [color_btn("💳 ᴀᴅᴅ ᴄʀᴇᴅɪᴛs", "deposit", "success")],
+                [color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")],
             ],
         )
 
@@ -1797,7 +1705,6 @@ async def _auto_verify_payment(user_id: int, deposit_id: str, delay: int):
     dep = await deposits_col.find_one({"deposit_id": deposit_id, "status": "pending"})
     if not dep:
         return
-    # Call webhook if configured
     webhook_url = await get_setting("payment_webhook_url")
     if webhook_url:
         import aiohttp
@@ -1811,26 +1718,19 @@ async def _auto_verify_payment(user_id: int, deposit_id: str, delay: int):
                             return
         except Exception as e:
             log.error(f"Webhook call failed: {e}")
-    # Mock approval (for demo)
     await _approve_deposit(deposit_id)
 
 async def _approve_deposit(deposit_id: str):
     dep = await deposits_col.find_one({"deposit_id": deposit_id, "status": "pending"})
     if not dep:
         return
-    await deposits_col.update_one(
-        {"deposit_id": deposit_id},
-        {"$set": {"status": "approved", "approved_at": datetime.utcnow()}}
-    )
+    await deposits_col.update_one({"deposit_id": deposit_id}, {"$set": {"status": "approved", "approved_at": datetime.utcnow()}})
     uid = dep["user_id"]
     amount = dep["amount"]
     credits = dep.get("credits", 0)
     await users_col.update_one({"user_id": uid}, {"$inc": {"balance": amount, "withdrawable": amount}})
     try:
-        await bot.send_message(
-            uid,
-            fancy(f"✅ **ᴘᴀʏᴍᴇɴᴛ ᴄᴏɴғɪʀᴍᴇᴅ!**\n`{credits} ᴄʀᴇᴅɪᴛs` ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ.")
-        )
+        await bot.send_message(uid, fancy(f"✅ **ᴘᴀʏᴍᴇɴᴛ ᴄᴏɴғɪʀᴍᴇᴅ!**\n`{credits} ᴄʀᴇᴅɪᴛs` ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ."))
     except Exception:
         pass
 
@@ -1848,7 +1748,6 @@ async def message_handler(event):
 
     state = state_data.get("state") if isinstance(state_data, dict) else state_data
 
-    # ── CUSTOM DEPOSIT ──────────────────────────────────────────
     if state == "custom_deposit":
         try:
             amount = float(text.strip().replace(",", ""))
@@ -1861,49 +1760,32 @@ async def message_handler(event):
             return
         credits = int(amount // 1)
         deposit_id = str(uuid.uuid4())[:8]
-        await deposits_col.insert_one({
-            "deposit_id": deposit_id,
-            "user_id": user_id,
-            "amount": amount,
-            "credits": credits,
-            "method": "upi",
-            "status": "pending",
-            "created_at": datetime.utcnow(),
-        })
+        await deposits_col.insert_one({"deposit_id": deposit_id, "user_id": user_id, "amount": amount, "credits": credits, "method": "upi", "status": "pending", "created_at": datetime.utcnow()})
         user_states[user_id] = {"deposit_id": deposit_id, "credits": credits, "amount": amount}
         upi_id = await get_setting("upi_id")
         upi_name = await get_setting("upi_name", "Next Level Vault")
         qr = _make_upi_qr(upi_id, amount, upi_name)
         upi_deep_link = f"upi://pay?pa={upi_id}&pn={upi_name}&am={amount:.2f}&cu=INR"
-        msg = fancy(
-            f"💳 **ᴜᴘɪ ᴘᴀʏᴍᴇɴᴛ**\n\n"
-            f"ᴀᴍᴏᴜɴᴛ: `₹{amount:.2f}`\n"
-            f"ᴄʀᴇᴅɪᴛs: `+{credits}`\n"
-            f"ᴜᴘɪ ɪᴅ: `{upi_id}`\n\n"
-            "sᴄᴀɴ Qʀ ᴏʀ ᴜsᴇ 'ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ'."
-        )
+        msg = fancy(f"💳 **ᴜᴘɪ ᴘᴀʏᴍᴇɴᴛ**\n\n• ᴀᴍᴏᴜɴᴛ: `₹{amount:.2f}`\n• ᴄʀᴇᴅɪᴛs: `+{credits}`\n• ᴜᴘɪ ɪᴅ: `{upi_id}`\n\nsᴄᴀɴ Qʀ ᴏʀ ᴜsᴇ 'ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ'.")
         if qr:
-            qr_file = io.BytesIO(qr)
-            qr_file.name = "upi_qr.png"
+            qr_file = io.BytesIO(qr); qr_file.name = "upi_qr.png"
             await event.respond(file=qr_file)
         await event.respond(msg, buttons=[
-            [Button.url("📲 ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ", upi_deep_link)],
-            [Button.inline("✅ ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ", b"deposit_paid")],
-            [Button.inline("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", b"check_payment")],
-            [Button.inline("◀️ ʙᴀᴄᴋ", b"deposit")]
+            [color_btn("📲 ᴘᴀʏ ᴠɪᴀ ᴜᴘɪ ᴀᴘᴘ", "upi_app", "primary")],
+            [color_btn("✅ ɪ ʜᴀᴠᴇ ᴘᴀɪᴅ", "deposit_paid", "success")],
+            [color_btn("🔄 ᴄʜᴇᴄᴋ ᴘᴀʏᴍᴇɴᴛ", "check_payment", "primary")],
+            [color_btn("◀️ ʙᴀᴄᴋ", "deposit", "default")]
         ])
-        user_states.pop(user_id, None)  # deposit_id set separately
+        user_states.pop(user_id, None)
 
-    # ── 2FA PASSWORD ─────────────────────────────────────────────
     elif state == "waiting_zip" and not event.message.file:
         twofa = text.strip()
         user_states[user_id] = {**state_data, "twofa_password": twofa}
         await event.respond(
             fancy(f"🔐 2ꜰᴀ ᴘᴀssᴡᴏʀᴅ sᴀᴠᴇᴅ: `{twofa}`\n\nɴᴏᴡ sᴇɴᴅ ᴛʜᴇ **.ᴢɪᴘ** ᴏʀ **.sᴇssɪᴏɴ** ꜰɪʟᴇ."),
-            buttons=[[Button.inline("❌ ᴄᴀɴᴄᴇʟ", b"admin")]],
+            buttons=[[color_btn("❌ ᴄᴀɴᴄᴇʟ", "admin", "danger")]],
         )
 
-    # ── ZIP or SINGLE SESSION FILE ─────────────────────────────
     elif state == "waiting_zip" and (event.message.file or event.message.media):
         prog = await event.respond(fancy("⏳ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ꜰɪʟᴇ…"))
         try:
@@ -1912,9 +1794,7 @@ async def message_handler(event):
             await prog.edit(f"❌ ᴅᴏᴡɴʟᴏᴀᴅ ꜰᴀɪʟᴇᴅ: {e}")
             return
 
-        # Detect if it's a ZIP or single .session
         if event.message.file and event.message.file.name and event.message.file.name.lower().endswith('.session'):
-            # Single session file
             ss = await _session_file_to_string(file_bytes)
             if not ss:
                 await prog.edit("❌ Invalid session file.")
@@ -1937,13 +1817,10 @@ async def message_handler(event):
             if acc_mgr is not None:
                 with contextlib.suppress(Exception):
                     await acc_mgr.add_client(phone, ss)
-            await prog.edit(
-                fancy(f"✅ **ꜰɪʟᴇ ᴜᴘʟᴏᴀᴅᴇᴅ**\n`{phone}` ᴀᴅᴅᴇᴅ ᴛᴏ {state_data['country_name']}.")
-            )
+            await prog.edit(fancy(f"✅ **ꜰɪʟᴇ ᴜᴘʟᴏᴀᴅᴇᴅ**\n`{phone}` ᴀᴅᴅᴇᴅ ᴛᴏ {state_data['country_name']}."))
             user_states.pop(user_id, None)
             return
 
-        # ZIP file
         try:
             zf = zipfile.ZipFile(io.BytesIO(file_bytes))
         except Exception as e:
@@ -1951,15 +1828,12 @@ async def message_handler(event):
             user_states.pop(user_id, None)
             return
 
-        # Check for 2fa.txt inside ZIP
         twofa = state_data.get("twofa_password", "")
         try:
             info = zf.getinfo("2fa.txt")
             twofa = zf.read(info).decode().strip()
-            log.info(f"[zip] Found 2fa.txt: {twofa}")
         except KeyError:
             pass
-        # If still empty, use default_2fa
         if not twofa:
             twofa = await get_setting("default_2fa", "")
 
@@ -1970,7 +1844,7 @@ async def message_handler(event):
             return
 
         total = len(all_names)
-        sem = asyncio.Semaphore(5)  # parallel connect
+        sem = asyncio.Semaphore(5)
         added = 0
         skipped = 0
         errors = []
@@ -2010,19 +1884,14 @@ async def message_handler(event):
         tasks = [process_one(n) for n in all_names]
         await asyncio.gather(*tasks)
 
-        result = fancy(
-            f"📦 **ᴜᴘʟᴏᴀᴅ ᴄᴏᴍᴘʟᴇᴛᴇ**\n\n"
-            f"✅ ᴀᴅᴅᴇᴅ: `{added}`\n"
-            f"⏭️ sᴋɪᴘᴘᴇᴅ: `{skipped}`\n"
-        )
+        result = fancy(f"📦 **ᴜᴘʟᴏᴀᴅ ᴄᴏᴍᴘʟᴇᴛᴇ**\n\n✅ ᴀᴅᴅᴇᴅ: `{added}`\n⏭️ sᴋɪᴘᴘᴇᴅ: `{skipped}`\n")
         if errors:
             shown = errors[:5]
             result += f"❌ ꜰᴀɪʟᴇᴅ ({len(errors)}): `{', '.join(shown)}`"
-        await prog.edit(result, buttons=[[Button.inline("◀️ ᴀᴅᴍɪɴ", b"admin")]])
+        await prog.edit(result, buttons=[[color_btn("◀️ ᴀᴅᴍɪɴ", "admin", "default")]])
         user_states.pop(user_id, None)
         zf.close()
 
-    # ── BROADCAST ──────────────────────────────────────────────────
     elif state == "broadcast":
         user_states.pop(user_id, None)
         prog  = await event.respond(fancy("📢 ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ…"))
@@ -2042,30 +1911,29 @@ async def message_handler(event):
             await asyncio.sleep(0.05)
         await prog.edit(fancy(f"✅ ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴘʟᴇᴛᴇ — {count} sᴇɴᴛ, {fail} ꜰᴀɪʟᴇᴅ."))
 
-    # ── SETTINGS VALUES ────────────────────────────────────────────
     elif state == "setting_botname":
         await set_setting("bot_name", text.strip())
         user_states.pop(user_id, None)
         await event.respond(fancy("✅ ʙᴏᴛ ɴᴀᴍᴇ ᴜᴘᴅᴀᴛᴇᴅ."),
-                            buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                            buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
 
     elif state == "setting_upi":
         await set_setting("upi_id", text.strip())
         user_states.pop(user_id, None)
         await event.respond(fancy("✅ ᴜᴘɪ ɪᴅ ᴜᴘᴅᴀᴛᴇᴅ."),
-                            buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                            buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
 
     elif state == "setting_upiname":
         await set_setting("upi_name", text.strip())
         user_states.pop(user_id, None)
         await event.respond(fancy("✅ ᴜᴘɪ ɴᴀᴍᴇ ᴜᴘᴅᴀᴛᴇᴅ."),
-                            buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                            buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
 
     elif state == "setting_support":
         await set_setting("support_link", text.strip())
         user_states.pop(user_id, None)
         await event.respond(fancy("✅ sᴜᴘᴘᴏʀᴛ ʟɪɴᴋ ᴜᴘᴅᴀᴛᴇᴅ."),
-                            buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                            buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
 
     elif state == "setting_ref_bonus":
         try:
@@ -2073,7 +1941,7 @@ async def message_handler(event):
             await set_setting("referral_bonus", val)
             user_states.pop(user_id, None)
             await event.respond(fancy(f"✅ ʀᴇꜰᴇʀʀᴀʟ ʙᴏɴᴜs sᴇᴛ ᴛᴏ ₹{val:.0f}."),
-                                buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                                buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
         except ValueError:
             await event.respond(fancy("❌ sᴇɴᴅ ᴀ ᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ."))
 
@@ -2083,7 +1951,7 @@ async def message_handler(event):
             await set_setting("referral_percent", val)
             user_states.pop(user_id, None)
             await event.respond(fancy(f"✅ ʀᴇꜰᴇʀʀᴀʟ % sᴇᴛ ᴛᴏ {val:.1f}%."),
-                                buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                                buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
         except ValueError:
             await event.respond(fancy("❌ sᴇɴᴅ ᴀ ᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ."))
 
@@ -2093,7 +1961,7 @@ async def message_handler(event):
             await set_setting("min_deposit", val)
             user_states.pop(user_id, None)
             await event.respond(fancy(f"✅ ᴍɪɴɪᴍᴜᴍ ᴅᴇᴘᴏsɪᴛ sᴇᴛ ᴛᴏ ₹{val:.0f}."),
-                                buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                                buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
         except ValueError:
             await event.respond(fancy("❌ sᴇɴᴅ ᴀ ᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ."))
 
@@ -2103,7 +1971,7 @@ async def message_handler(event):
             await set_setting("auto_verify_delay", val)
             user_states.pop(user_id, None)
             await event.respond(fancy(f"✅ ᴀᴜᴛᴏ ᴠᴇʀɪғʏ ᴅᴇʟᴀʏ sᴇᴛ ᴛᴏ {val}s."),
-                                buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                                buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
         except ValueError:
             await event.respond(fancy("❌ sᴇɴᴅ ᴀ ᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ."))
 
@@ -2111,15 +1979,14 @@ async def message_handler(event):
         await set_setting("payment_webhook_url", text.strip())
         user_states.pop(user_id, None)
         await event.respond(fancy("✅ ᴘᴀʏᴍᴇɴᴛ ᴡᴇʙʜᴏᴏᴋ ᴜʀʟ sᴇᴛ."),
-                            buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                            buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
 
     elif state == "setting_default_2fa":
         await set_setting("default_2fa", text.strip())
         user_states.pop(user_id, None)
         await event.respond(fancy("✅ ᴅᴇꜰᴀᴜʟᴛ 2ꜰᴀ ᴘᴀssᴡᴏʀᴅ sᴇᴛ."),
-                            buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                            buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
 
-    # ── WELCOME PHOTO ────────────────────────────────────────────
     elif state == "welcome_photo_set":
         if event.message.photo:
             if hasattr(event.message.media, 'photo') and hasattr(event.message.media.photo, 'id'):
@@ -2127,46 +1994,29 @@ async def message_handler(event):
                 await set_setting("welcome_photo", file_id)
                 user_states.pop(user_id, None)
                 await event.respond(fancy("🖼️ ᴡᴇʟᴄᴏᴍᴇ ᴘʜᴏᴛᴏ sᴇᴛ!"),
-                                    buttons=[[Button.inline("◀️ sᴇᴛᴛɪɴɢs", b"asettings")]])
+                                    buttons=[[color_btn("◀️ sᴇᴛᴛɪɴɢs", "asettings", "default")]])
             else:
                 await event.respond(fancy("❌ ᴜɴᴀʙʟᴇ ᴛᴏ ɢᴇᴛ ᴘʜᴏᴛᴏ ɪᴅ."))
         else:
             await event.respond(fancy("❌ ᴘʟᴇᴀsᴇ sᴇɴᴅ ᴀ ᴘʜᴏᴛᴏ."))
 
-    # ── ADD COUNTRY ──────────────────────────────────────────────
     elif state == "add_country":
         try:
             parts = [p.strip() for p in text.strip().split("|")]
-            code, name, flag_, price_str = (
-                parts[0].upper(), parts[1], parts[2], parts[3]
-            )
+            code, name, flag_, price_str = (parts[0].upper(), parts[1], parts[2], parts[3])
             price_val = float(price_str)
             existing  = await countries_col.find_one({"code": code})
             if existing:
-                await countries_col.update_one(
-                    {"code": code},
-                    {"$set": {"name": name, "flag": flag_,
-                              "price": price_val, "is_active": True}},
-                )
+                await countries_col.update_one({"code": code}, {"$set": {"name": name, "flag": flag_, "price": price_val, "is_active": True}})
                 msg = f"♻️ **{name}** ᴜᴘᴅᴀᴛᴇᴅ (₹{price_val:.0f})."
             else:
-                await countries_col.insert_one({
-                    "code":      code,
-                    "name":      name,
-                    "flag":      flag_,
-                    "price":     price_val,
-                    "is_active": True,
-                })
+                await countries_col.insert_one({"code": code, "name": name, "flag": flag_, "price": price_val, "is_active": True})
                 msg = f"✅ **{name}** ᴀᴅᴅᴇᴅ (₹{price_val:.0f})."
             user_states.pop(user_id, None)
-            await event.respond(fancy(msg),
-                                buttons=[[Button.inline("◀️ ᴄᴏᴜɴᴛʀɪᴇs", b"acountries")]])
+            await event.respond(fancy(msg), buttons=[[color_btn("◀️ ᴄᴏᴜɴᴛʀɪᴇs", "acountries", "default")]])
         except Exception:
-            await event.respond(
-                fancy("❌ ᴡʀᴏɴɢ ꜰᴏʀᴍᴀᴛ. ᴜsᴇ:\n`CODE | Name | Flag | Price`")
-            )
+            await event.respond(fancy("❌ ᴡʀᴏɴɢ ꜰᴏʀᴍᴀᴛ. ᴜsᴇ:\n`CODE | Name | Flag | Price`"))
 
-    # ── USER SEARCH ──────────────────────────────────────────────
     elif state == "search_user":
         try:
             tid    = int(text.strip())
@@ -2177,22 +2027,11 @@ async def message_handler(event):
             o_count = await orders_col.count_documents({"user_id": tid})
             d_count = await deposits_col.count_documents({"user_id": tid})
             banned_ = "🚫 ʏᴇs" if target.get("is_banned") else "✅ ɴᴏ"
-            await event.respond(
-                fancy(
-                    f"👤 **ᴜsᴇʀ ɪɴꜰᴏ**\n\n"
-                    f"ɪᴅ: `{tid}`\n"
-                    f"ʙᴀʟᴀɴᴄᴇ: `₹{target.get('balance', 0):.2f}`\n"
-                    f"ᴏʀᴅᴇʀs: `{o_count}`\n"
-                    f"ᴅᴇᴘᴏsɪᴛs: `{d_count}`\n"
-                    f"ʙᴀɴɴᴇᴅ: {banned_}\n"
-                    f"ᴊᴏɪɴᴇᴅ: {target.get('joined_at','?')}"
-                )
-            )
+            await event.respond(fancy(f"👤 **ᴜsᴇʀ ɪɴꜰᴏ**\n\n• ɪᴅ: `{tid}`\n• ʙᴀʟᴀɴᴄᴇ: `₹{target.get('balance', 0):.2f}`\n• ᴏʀᴅᴇʀs: `{o_count}`\n• ᴅᴇᴘᴏsɪᴛs: `{d_count}`\n• ʙᴀɴɴᴇᴅ: {banned_}\n• ᴊᴏɪɴᴇᴅ: {target.get('joined_at','?')}"))
             user_states.pop(user_id, None)
         except ValueError:
             await event.respond(fancy("❌ sᴇɴᴅ ᴀ ᴠᴀʟɪᴅ ᴛᴇʟᴇɢʀᴀᴍ ɪᴅ."))
 
-    # ── ADD BALANCE UID ──────────────────────────────────────────
     elif state == "add_bal_uid":
         try:
             tid = int(text.strip())
@@ -2207,21 +2046,15 @@ async def message_handler(event):
             tid     = state_data["target_id"]
             await users_col.update_one({"user_id": tid}, {"$inc": {"balance": amount, "withdrawable": amount}})
             try:
-                await bot.send_message(
-                    tid,
-                    fancy(f"💰 **₹{amount:.0f} ᴀᴅᴅᴇᴅ** ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ ʙʏ ᴀᴅᴍɪɴ!"),
-                )
+                await bot.send_message(tid, fancy(f"💰 **₹{amount:.0f} ᴀᴅᴅᴇᴅ** ᴛᴏ ʏᴏᴜʀ ᴡᴀʟʟᴇᴛ ʙʏ ᴀᴅᴍɪɴ!"))
             except Exception:
                 pass
             user_states.pop(user_id, None)
-            await event.respond(
-                fancy(f"✅ ₹{amount:.0f} ᴀᴅᴅᴇᴅ ᴛᴏ ᴜsᴇʀ `{tid}`."),
-                buttons=[[Button.inline("◀️ ᴀᴅᴍɪɴ", b"admin")]],
-            )
+            await event.respond(fancy(f"✅ ₹{amount:.0f} ᴀᴅᴅᴇᴅ ᴛᴏ ᴜsᴇʀ `{tid}`."),
+                                buttons=[[color_btn("◀️ ᴀᴅᴍɪɴ", "admin", "default")]])
         except ValueError:
             await event.respond(fancy("❌ ɪɴᴠᴀʟɪᴅ ᴀᴍᴏᴜɴᴛ."))
 
-    # ── BAN / UNBAN ──────────────────────────────────────────────
     elif state == "ban_uid":
         try:
             tid    = int(text.strip())
@@ -2231,28 +2064,18 @@ async def message_handler(event):
                 user_states.pop(user_id, None)
                 return
             new_ban = not target.get("is_banned", False)
-            await users_col.update_one(
-                {"user_id": tid}, {"$set": {"is_banned": new_ban}}
-            )
+            await users_col.update_one({"user_id": tid}, {"$set": {"is_banned": new_ban}})
             action = "ʙᴀɴɴᴇᴅ" if new_ban else "ᴜɴʙᴀɴɴᴇᴅ"
             try:
-                await bot.send_message(
-                    tid,
-                    fancy("🚫 ʏᴏᴜ ʜᴀᴠᴇ ʙᴇᴇɴ **ʙᴀɴɴᴇᴅ** ғʀᴏᴍ ᴛʜɪs ʙᴏᴛ."
-                          if new_ban else
-                          "✅ ʏᴏᴜ ʜᴀᴠᴇ ʙᴇᴇɴ **ᴜɴʙᴀɴɴᴇᴅ**. ᴡᴇʟᴄᴏᴍᴇ ʙᴀᴄᴋ!"),
-                )
+                await bot.send_message(tid, fancy("🚫 ʏᴏᴜ ʜᴀᴠᴇ ʙᴇᴇɴ **ʙᴀɴɴᴇᴅ** ғʀᴏᴍ ᴛʜɪs ʙᴏᴛ." if new_ban else "✅ ʏᴏᴜ ʜᴀᴠᴇ ʙᴇᴇɴ **ᴜɴʙᴀɴɴᴇᴅ**. ᴡᴇʟᴄᴏᴍᴇ ʙᴀᴄᴋ!"))
             except Exception:
                 pass
             user_states.pop(user_id, None)
-            await event.respond(
-                fancy(f"✅ ᴜsᴇʀ `{tid}` ʜᴀs ʙᴇᴇɴ **{action}**."),
-                buttons=[[Button.inline("◀️ ᴀᴅᴍɪɴ", b"admin")]],
-            )
+            await event.respond(fancy(f"✅ ᴜsᴇʀ `{tid}` ʜᴀs ʙᴇᴇɴ **{action}**."),
+                                buttons=[[color_btn("◀️ ᴀᴅᴍɪɴ", "admin", "default")]])
         except ValueError:
             await event.respond(fancy("❌ ɪɴᴠᴀʟɪᴅ ᴛᴇʟᴇɢʀᴀᴍ ɪᴅ."))
 
-    # ── ADD ADMIN ──────────────────────────────────────────────────
     elif state == "add_admin":
         try:
             new_id = int(text.strip())
@@ -2265,27 +2088,14 @@ async def message_handler(event):
                 uname_ = None
             existing = await bot_admins_col.find_one({"telegram_id": new_id})
             if existing:
-                await bot_admins_col.update_one(
-                    {"telegram_id": new_id}, {"$set": {"is_active": True}}
-                )
+                await bot_admins_col.update_one({"telegram_id": new_id}, {"$set": {"is_active": True}})
             else:
-                await bot_admins_col.insert_one({
-                    "telegram_id": new_id,
-                    "name":        name_,
-                    "username":    uname_,
-                    "is_active":   True,
-                    "added_by":    user_id,
-                    "added_at":    datetime.utcnow(),
-                })
+                await bot_admins_col.insert_one({"telegram_id": new_id, "name": name_, "username": uname_, "is_active": True, "added_by": user_id, "added_at": datetime.utcnow()})
             user_states.pop(user_id, None)
-            await event.respond(
-                fancy(f"✅ **ᴀᴅᴍɪɴ ᴀᴅᴅᴇᴅ:** {name_} (`{new_id}`)"),
-                buttons=[[Button.inline("◀️ ᴍᴀɴᴀɢᴇ ᴀᴅᴍɪɴs", b"manage_admins")]],
-            )
+            await event.respond(fancy(f"✅ **ᴀᴅᴍɪɴ ᴀᴅᴅᴇᴅ:** {name_} (`{new_id}`)"),
+                                buttons=[[color_btn("◀️ ᴍᴀɴᴀɢᴇ ᴀᴅᴍɪɴs", "manage_admins", "default")]])
             try:
-                await bot.send_message(
-                    new_id, fancy("🔑 ʏᴏᴜ ʜᴀᴠᴇ ʙᴇᴇɴ ɢʀᴀɴᴛᴇᴅ **ᴀᴅᴍɪɴ ᴀᴄᴄᴇss** ᴛᴏ ᴛʜᴇ ʙᴏᴛ!")
-                )
+                await bot.send_message(new_id, fancy("🔑 ʏᴏᴜ ʜᴀᴠᴇ ʙᴇᴇɴ ɢʀᴀɴᴛᴇᴅ **ᴀᴅᴍɪɴ ᴀᴄᴄᴇss** ᴛᴏ ᴛʜᴇ ʙᴏᴛ!"))
             except Exception:
                 pass
         except ValueError:
@@ -2309,7 +2119,7 @@ async def cmd_ping(event):
 async def cmd_cancel(event):
     user_states.pop(event.sender_id, None)
     await event.respond(fancy("✅ ᴄᴜʀʀᴇɴᴛ ᴀᴄᴛɪᴏɴ ᴄᴀɴᴄᴇʟʟᴇᴅ."),
-                        buttons=[[Button.inline("🏠 ʜᴏᴍᴇ", b"main_menu")]])
+                        buttons=[[color_btn("🏠 ʜᴏᴍᴇ", "main_menu", "default")]])
 
 @bot.on(events.NewMessage(pattern="/info"))
 async def cmd_info(event):
@@ -2324,30 +2134,13 @@ async def cmd_info(event):
         if user:
             orders = await orders_col.count_documents({"user_id": uid})
             deps = await deposits_col.count_documents({"user_id": uid})
-            await event.respond(
-                fancy(
-                    f"👤 **ᴜsᴇʀ ɪɴꜰᴏ**\n\n"
-                    f"ɪᴅ: `{uid}`\n"
-                    f"ʙᴀʟᴀɴᴄᴇ: `₹{user.get('balance',0):.2f}`\n"
-                    f"ᴏʀᴅᴇʀs: `{orders}`\n"
-                    f"ᴅᴇᴘᴏsɪᴛs: `{deps}`"
-                )
-            )
+            await event.respond(fancy(f"👤 **ᴜsᴇʀ ɪɴꜰᴏ**\n\n• ɪᴅ: `{uid}`\n• ʙᴀʟᴀɴᴄᴇ: `₹{user.get('balance',0):.2f}`\n• ᴏʀᴅᴇʀs: `{orders}`\n• ᴅᴇᴘᴏsɪᴛs: `{deps}`"))
             return
     except ValueError:
         pass
     order = await orders_col.find_one({"_id": target})
     if order:
-        await event.respond(
-            fancy(
-                f"📋 **ᴏʀᴅᴇʀ ɪɴꜰᴏ**\n\n"
-                f"ɪᴅ: `{target}`\n"
-                f"ᴜsᴇʀ: `{order.get('user_id')}`\n"
-                f"ᴄᴏᴜɴᴛʀʏ: {order.get('country_flag','')} {order.get('country')}\n"
-                f"ᴘʜᴏɴᴇ: `{order.get('phone')}`\n"
-                f"sᴛᴀᴛᴜs: `{order.get('status')}`"
-            )
-        )
+        await event.respond(fancy(f"📋 **ᴏʀᴅᴇʀ ɪɴꜰᴏ**\n\n• ɪᴅ: `{target}`\n• ᴜsᴇʀ: `{order.get('user_id')}`\n• ᴄᴏᴜɴᴛʀʏ: {order.get('country_flag','')} {order.get('country')}\n• ᴘʜᴏɴᴇ: `{order.get('phone')}`\n• sᴛᴀᴛᴜs: `{order.get('status')}`"))
     else:
         await event.respond(fancy("❌ ɴᴏ ᴜsᴇʀ ᴏʀ ᴏʀᴅᴇʀ ꜰᴏᴜɴᴅ."))
 
@@ -2360,10 +2153,7 @@ async def cmd_request(event):
     cc = args[1].upper()
     for admin_id in await get_all_admin_ids():
         try:
-            await bot.send_message(
-                admin_id,
-                fancy(f"📢 **ʀᴇǫᴜᴇsᴛ ғᴏʀ ʀᴇsᴛᴏᴄᴋ**\n\nᴜsᴇʀ `{event.sender_id}` ʀᴇǫᴜᴇsᴛs `{cc}`.")
-            )
+            await bot.send_message(admin_id, fancy(f"📢 **ʀᴇǫᴜᴇsᴛ ғᴏʀ ʀᴇsᴛᴏᴄᴋ**\n\nᴜsᴇʀ `{event.sender_id}` ʀᴇǫᴜᴇsᴛs `{cc}`."))
         except Exception:
             pass
     await event.respond(fancy(f"✅ ʀᴇǫᴜᴇsᴛ ғᴏʀ `{cc}` sᴇɴᴛ ᴛᴏ ᴀᴅᴍɪɴs."))
@@ -2377,19 +2167,15 @@ async def cmd_feedback(event):
     feedback = args[1]
     for admin_id in await get_all_admin_ids():
         try:
-            await bot.send_message(
-                admin_id,
-                fancy(f"💬 **ɴᴇᴡ ꜰᴇᴇᴅʙᴀᴄᴋ**\n\nᴜsᴇʀ `{event.sender_id}`:\n{feedback}")
-            )
+            await bot.send_message(admin_id, fancy(f"💬 **ɴᴇᴡ ꜰᴇᴇᴅʙᴀᴄᴋ**\n\nᴜsᴇʀ `{event.sender_id}`:\n{feedback}"))
         except Exception:
             pass
     await event.respond(fancy("✅ ᴛʜᴀɴᴋ ʏᴏᴜ ғᴏʀ ʏᴏᴜʀ ꜰᴇᴇᴅʙᴀᴄᴋ!"))
 
 # ─── 23. SELF‑PING (Keep bot awake on Render) ──────────────────
 async def self_ping():
-    """Ping the /ping endpoint every 4 minutes to avoid Render sleep."""
     while True:
-        await asyncio.sleep(240)  # 4 minutes
+        await asyncio.sleep(240)
         url = RENDER_EXTERNAL_URL
         if not url:
             continue
@@ -2420,8 +2206,6 @@ async def ping():
 # ─── 25. RAZORPAY WEBHOOK (Optional) ──────────────────────────
 @_web.post("/razorpay-webhook")
 async def razorpay_webhook(request: Request):
-    # This is a placeholder – real implementation would verify signature
-    # and call _approve_deposit(deposit_id)
     body = await request.json()
     event = body.get("event")
     if event == "payment.captured":
@@ -2443,12 +2227,9 @@ async def main():
     await bot.start(bot_token=BOT_TOKEN)
 
     global acc_mgr
-    acc_mgr = AccountManager(
-        accounts_col, bot, API_ID, API_HASH, pending_otp_requests
-    )
+    acc_mgr = AccountManager(accounts_col, bot, API_ID, API_HASH, pending_otp_requests)
     await acc_mgr.load_all()
 
-    # Start self-ping if RENDER_EXTERNAL_URL is set
     if RENDER_EXTERNAL_URL:
         asyncio.create_task(self_ping())
 
