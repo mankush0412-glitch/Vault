@@ -18,9 +18,9 @@ _SMALL_CAPS = {
 def _fancy(text: str) -> str:
     return ''.join(_SMALL_CAPS.get(ch.lower(), ch) for ch in text)
 
-# Color Button Helper (Primary Blue, Danger Red)
+# FIXED: Use Button.inline with style (supports colored buttons)
 def color_btn(text, data, style="default"):
-    return types.KeyboardButtonCallback(text=_fancy(text), data=data.encode(), style=style)
+    return Button.inline(_fancy(text), data, style=style)
 
 log = logging.getLogger("NextLevelVault")
 
